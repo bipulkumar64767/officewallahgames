@@ -4,95 +4,89 @@
 
 ---
 
-## 1. Task Picking Rules
+## 1. Directory Structure & Folder-Wise Rules
 
-### 1.1 Before Starting Any Task
-- [ ] Read `agents_context_folder/PROJECT_CONTEXT.md` for full project understanding.
-- [ ] Read this file (`agent_rule_folder/RULES.md`) completely.
-- [ ] Identify which module (backend/frontend) the task belongs to.
-- [ ] If the task spans both backend and frontend, break it into sub-tasks per module.
+The project is structured into distinct, isolated folders. Every agent must strictly observe what each folder contains and how it behaves:
 
-### 1.2 Task Prioritization
-1. **Critical** — Security fixes, production bugs, data integrity issues.
-2. **High** — Core game logic, API contracts, authentication.
-3. **Medium** — New game features, UI enhancements, testing.
-4. **Low** — Documentation, refactoring, code style.
+### 1.1 `agent_rule_folder/`
+- **Purpose**: Defines behavioral rules, coding standards, task handling guidelines, and workflow protocols for agents.
+- **Rules**:
+  - Must be read before starting any execution or modification.
+  - Only update when new guidelines, conventions, or architectural workflows are established.
+  - Never place application source code here.
 
-### 1.3 Scope Boundaries
-- **Backend changes** → Only touch files inside `backend/` folder.
-- **Frontend changes** → Only touch files inside `frontend/` folder.
-- **Never mix** backend and frontend changes in a single commit unless it's an API contract update that requires both.
-- **Agent rule/context files** → Update when project structure or conventions change.
+### 1.2 `agents_context_folder/`
+- **Purpose**: Acts as the project's long-term memory, holding system context, tech stack info, and Architecture Decision Records (ADRs).
+- **Rules**:
+  - Always consult `PROJECT_CONTEXT.md` before solving complex architectural or logic problems.
+  - Update `DECISIONS_LOG.md` when any major design or tech choice is made.
+  - Keeps context updated so future agents have zero ambiguity.
 
----
+### 1.3 `product_prds/`
+- **Purpose**: Formal Product Requirements Documents (PRDs) for each game and feature.
+- **Rules**:
+  - Every game or major feature MUST have an approved PRD in this folder before writing backend or frontend code.
+  - Contains detailed UI design specs, backend rules, microservice architecture, and API contracts.
+  - Must follow `PRD_TEMPLATE.md`.
+  - Serves as the ultimate specification against which deliverables are evaluated.
 
-## 2. Code Quality Rules
+### 1.4 `rough-discussion/`
+- **Purpose**: Scratchpad, active chat discussion notes, brainstorming drafts, and file dumpyard.
+- **Rules**:
+  - Use freely to dump raw ideas, prompt contexts, temporary notes, or API test payloads.
+  - Once discussion is finalized, distill the outcome into a formal PRD in `product_prds/`.
+  - Non-blocking: files here do not affect production builds.
 
-### 2.1 Backend (Spring Boot / Java 21)
-- Java version: **21 LTS** (use modern features: records, sealed classes, pattern matching).
-- Build tool: **Maven**.
-- Follow **microservices architecture** — each game is its own module/service.
-- Each microservice MUST be independently deployable.
-- Use `@RestController` for APIs, proper DTOs, service layer separation.
-- All APIs must return proper HTTP status codes and error responses.
-- Write unit tests for service layer at minimum.
+### 1.5 `backend/`
+- **Purpose**: The entire backend ecosystem using Spring Boot (Java 21 LTS) in a microservices multi-module architecture.
+- **Rules**:
+  - All Java, Spring Boot, Maven, and backend microservice code MUST remain inside this folder only.
+  - Contains `common/` for shared DTOs/exceptions and `games/` for isolated game microservices.
+  - Never place frontend assets or UI code here.
+  - Each microservice must be standalone and independently deployable.
 
-### 2.2 Frontend (React)
-- Use **Vite** as the build tool (fast, modern).
-- Use **functional components** with hooks only (no class components).
-- Folder structure: feature-based (each game gets its own folder).
-- Use **CSS Modules** or **Tailwind CSS** for styling.
-- All API calls must go through a centralized API service layer.
-
-### 2.3 Git Conventions
-- **Branch naming**: `feature/<module>/<short-description>`, `fix/<module>/<short-description>`, `chore/<description>`.
-- **Commit messages**: Use conventional commits — `feat:`, `fix:`, `chore:`, `docs:`, `refactor:`, `test:`.
-- Always commit backend and frontend changes separately when possible.
-- Never push directly to `main` — use feature branches and PRs (when team grows).
-
----
-
-## 3. Architecture Rules
-
-### 3.1 Microservices (Backend)
-- Each game microservice has its own:
-  - Controller layer (`controller/`)
-  - Service layer (`service/`)
-  - Model/Entity layer (`model/`)
-  - Repository layer (`repository/`)
-  - DTO layer (`dto/`)
-  - Configuration (`config/`)
-- Shared/common code goes in a `common/` module.
-- API Gateway will be added later — design APIs to be gateway-ready.
-
-### 3.2 Frontend
-- Each game has its own folder under `src/games/<game-name>/`.
-- Shared components go in `src/components/`.
-- Shared utilities go in `src/utils/`.
-- Routing is centralized in `src/App.jsx`.
-
-### 3.3 Communication
-- Backend ↔ Frontend: **REST APIs** (JSON).
-- Microservice ↔ Microservice: **REST** for now (can migrate to message queues later).
+### 1.6 `frontend/`
+- **Purpose**: The complete user interface using React + Vite.
+- **Rules**:
+  - All UI components, pages, styles, routing, and client assets MUST remain inside this folder only.
+  - Follow feature-based separation (`src/games/<game-name>/`).
+  - Centralized API requests using `src/services/api.js`.
+  - Can be built and hosted independently as a static web application.
 
 ---
 
-## 4. Deployment Readiness Rules
-- Each microservice MUST be able to run standalone.
-- Docker support will be added later — keep configurations externalized.
-- Use **environment variables** or **application.yml profiles** for configuration.
-- Frontend must be buildable as a static bundle (`npm run build`).
+## 2. Task Picking & Execution Protocol
+
+### 2.1 Before Starting Any Task
+1. Read `agent_rule_folder/RULES.md` (this file).
+2. Check `agents_context_folder/PROJECT_CONTEXT.md` for project status and architecture context.
+3. If implementing a game or feature, verify its PRD exists in `product_prds/`. If not, discuss and draft in `rough-discussion/` first.
+4. Target only the designated module (`backend/` or `frontend/`). Do not mix concerns.
+
+### 2.2 Task Prioritization
+1. **Critical** — Security vulnerabilities, production crashes, broken builds.
+2. **High** — Core game engine logic, state machines, API contracts.
+3. **Medium** — New games, UI screens, animations, score persistence.
+4. **Low** — Minor refactoring, documentation, style polish.
 
 ---
 
-## 5. File Modification Checklist
-Before modifying ANY file, the agent MUST:
-1. ✅ Understand the current state of the file.
-2. ✅ Identify the impact on other modules.
-3. ✅ Ensure backward compatibility (don't break existing APIs).
-4. ✅ Update relevant documentation if behavior changes.
-5. ✅ Run/suggest running tests after changes.
+## 3. Code Standards & Architecture Guidelines
+
+### 3.1 Backend (Spring Boot / Java 21)
+- Java 21 LTS features (records, sealed interfaces, pattern matching).
+- All API endpoints must return the standardized `ApiResponse<T>` envelope.
+- Throw custom `GameException` for domain errors; caught by `GlobalExceptionHandler`.
+- Independent service configurations (prepared for future API Gateway / Eureka integration).
+
+### 3.2 Frontend (React + Vite)
+- Functional components, hooks, clean modular styles.
+- Routing through `react-router-dom`.
+- Error boundaries and loading states for all asynchronous operations.
 
 ---
 
-*Last Updated: 2026-10-29*
+## 4. Git & Commit Guidelines
+- Conventional commits (`feat:`, `fix:`, `docs:`, `refactor:`, `chore:`).
+- Always verify working build/tests before pushing.
+- Commit backend and frontend changes cleanly.
