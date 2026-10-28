@@ -6,6 +6,7 @@ import Home from './pages/Home';
 import TicTacToeLobby from './pages/TicTacToeLobby';
 import LudoLobby from './pages/LudoLobby';
 import WordGridLobby from './pages/WordGridLobby';
+import ConnectDropLobby from './pages/ConnectDropLobby';
 
 function App() {
   return (
@@ -19,6 +20,7 @@ function App() {
           <Route path="/games/tictactoe" element={<TicTacToeLobby />} />
           <Route path="/games/ludo" element={<LudoLobby />} />
           <Route path="/games/wordgrid" element={<WordGridLobby />} />
+          <Route path="/games/connectdrop" element={<ConnectDropLobby />} />
         </Routes>
       </Router>
     </AuthProvider>

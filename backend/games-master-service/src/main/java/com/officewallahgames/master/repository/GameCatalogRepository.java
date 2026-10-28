@@ -67,6 +67,21 @@ public class GameCatalogRepository {
                 .build());
 
         save(GameMetadata.builder()
+                .gameId("connectdrop")
+                .name("Connect Drop")
+                .tagline("Real-time 2-player 4-in-a-row drop duel")
+                .gameMode(GameMode.MULTIPLAYER)
+                .category("STRATEGY_PVP")
+                .thumbnailUrl("/assets/games/connectdrop-thumb.png")
+                .route("/games/connectdrop")
+                .minPlayers(2)
+                .maxPlayers(2)
+                .isActive(true)
+                .isMaintenance(false)
+                .displayOrder(4)
+                .build());
+
+        save(GameMetadata.builder()
                 .gameId("snake")
                 .name("Snake Rush")
                 .tagline("Classic retro snake with modern neon visuals")
@@ -78,7 +93,7 @@ public class GameCatalogRepository {
                 .maxPlayers(1)
                 .isActive(false)
                 .isMaintenance(false)
-                .displayOrder(4)
+                .displayOrder(5)
                 .build());
 
         save(GameMetadata.builder()
@@ -93,7 +108,7 @@ public class GameCatalogRepository {
                 .maxPlayers(1)
                 .isActive(false)
                 .isMaintenance(false)
-                .displayOrder(5)
+                .displayOrder(6)
                 .build());
 
         save(GameMetadata.builder()
@@ -108,7 +123,7 @@ public class GameCatalogRepository {
                 .maxPlayers(2)
                 .isActive(false)
                 .isMaintenance(false)
-                .displayOrder(6)
+                .displayOrder(7)
                 .build());
     }
 

@@ -33,6 +33,7 @@
         <module>tic-tac-toe-service</module>
         <module>ludo-service</module>
         <module>word-grid-service</module>
+        <module>connect-drop-service</module>
     </modules>
 
     <dependencies>
