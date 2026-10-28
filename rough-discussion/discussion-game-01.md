@@ -14,7 +14,7 @@ flowchart TD
     Client <-->|"REST & STOMP WebSockets"| TicTacToeAPI["Tic-Tac-Toe Game Service (:8083)"]
 
     subgraph MasterService["🎮 Games Master Service (Port 8081)"]
-        MasterAPI --> MasterDB[("PostgreSQL / In-Memory Seed (Game Metadata, Logos, Feature Flags)")]
+        MasterAPI --> MasterDB[("PostgreSQL / In-Memory Seed (Catalog, Single/Multiplayer Modes, Feature Gate)")]
     end
 
     subgraph UserService["👤 User Management Service - UMS (Port 8082)"]
@@ -23,33 +23,26 @@ flowchart TD
     end
 
     subgraph GameService["⚡ Tic-Tac-Toe Microservice (Port 8083)"]
-        TicTacToeAPI <--> RedisState[("Redis (50k Concurrency Board State, Locks & Pub/Sub)")]
+        TicTacToeAPI <--> RedisState[("Redis (50k Concurrency Board State, Room Link Sessions, Pub/Sub)")]
         TicTacToeAPI -.-> MatchStore[("PostgreSQL (Finished Match History)")]
     end
 ```
 
 ---
 
-## 2. Microservice Breakdown & PRD Mapping
+## 2. Updated PRD Specifications
 
-### PRD 1: `games-master-service` (Port 8081)
-- **Primary Responsibility:** Catalog, Metadata & Feature Gatekeeper.
-- **Key Capabilities:**
-  - Serves dynamic game list with titles, tags, thumbnails, logos, player limits (`MIN: 2`, `MAX: 2`), orientation, and launch routes.
-  - **Feature Gate Switch:** Enables/disables games dynamically (`isActive: true/false`, `maintenanceMode: true/false`) without redeploying frontend.
-  - Category and ordering control for the linear scrollable game list.
+### 1. `product_prds/01-games-master-service-prd.md`
+- **Single API for Dual-Mode UI**: `GET /api/v1/games/catalog` returns both mode card summaries (`SINGLE_PLAYER` vs `MULTIPLAYER`) and the complete game array.
+- **Card-Filtered UI**: Users can toggle between the 🕹️ Single Player card and ⚔️ Multiplayer card to dynamically filter the linear scroll list.
 
-### PRD 2: `user-management-service` (Port 8082)
-- **Primary Responsibility:** Lightweight Player Identity & Session Provider.
-- **Key Capabilities:**
-  - **Guest Auto-Provisioning:** Instantly generates a unique `GUEST_<snowflakeId>` (e.g. `GUEST_892374182`) with a persistent guest token for users entering the site.
-  - **Mock / Quick Login:** Simple login form accepting any username & password, granting an authenticated player identity with fixed mock token (`fixed-auth-token-xyz`).
-  - **Player Profile Snapshot:** Returns player avatar/name to display in the header and attaches to matchmaking queues.
+### 2. `product_prds/02-user-management-service-prd.md`
+- Auto-assigns `GUEST_<snowflakeId>` with persistent guest session token.
+- Simple login form with mock credential verification issuing a fixed token (`owg-fixed-auth-token-2026`).
 
-### PRD 3: `tic-tac-toe-service` (Port 8083)
-- **Primary Responsibility:** Real-time 2-Player Game Engine & Matchmaking.
-- **Key Capabilities:**
-  - Handles 2-player matchmaking queue (quick pairing or room code invitation).
-  - Real-time turn-based gameplay over STOMP WebSockets.
-  - Scalable for 50,000+ concurrent players using stateless Spring Boot + Redis session state.
-  - Atomic move validation, win/draw detection, and game conclusion recording.
+### 3. `product_prds/03-tic-tac-toe-game-prd.md`
+- **Room Creation & Shareable Link**:
+  - `POST /api/v1/tictactoe/rooms/create` -> returns `roomCode: "TTT-7X9B"` and shareable URL (`/games/tictactoe?room=TTT-7X9B`).
+  - Host gets assigned `Player X`, waiting in room state (`WAITING_FOR_OPPONENT`).
+  - Visiting player opens link or enters code -> auto-joins as `Player O` and triggers `ROOM_READY` via STOMP WebSocket.
+- **50k Concurrency Scale**: Stateless Spring Boot instances backed by Redis state and Pub/Sub.
