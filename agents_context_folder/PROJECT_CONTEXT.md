@@ -65,6 +65,7 @@ officewallahgames/
 1. **Always Decompose Breakable Tasks**: Whenever work can be partitioned, split it immediately.
 2. **Parallel Sub-Agents for Maximum Speed**: Run backend, frontend, documentation, and testing tasks concurrently using parallel sub-agents to deliver work as fast as possible.
 3. **Continuous Integration & Clean Commits**: Validate builds and keep git history clean and up to date.
+4. **Local Commits vs. Remote Push**: Commit locally anytime as work progresses, but **ALWAYS ask user permission before pushing to remote** (or only push when explicitly instructed).
 
 ---
 

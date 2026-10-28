@@ -91,7 +91,7 @@ The project is structured into distinct, isolated folders. Every agent must stri
 
 ---
 
-## 4. Git & Commit Guidelines
-- Conventional commits (`feat:`, `fix:`, `docs:`, `refactor:`, `chore:`).
-- Always verify working build/tests before pushing.
-- Commit backend and frontend changes cleanly.
+## 4. Git & Push Protocol (STRICT)
+- **Local Commits**: You CAN commit to the local Git repository freely to keep track of work and checkpoints. Use conventional commit messages (`feat:`, `fix:`, `docs:`, `refactor:`, `chore:`).
+- **Remote Push**: **NEVER push code to the remote repository (`origin/main` or any remote branch) without explicit permission.** Every single time, ask the user first before pushing, or wait until the user explicitly requests to push.
+- **Verification**: Always verify build and test status locally before staging and committing.
