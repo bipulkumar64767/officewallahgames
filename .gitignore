@@ -1,0 +1,39 @@
+# ===== OS Generated =====
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ===== IDEs =====
+.idea/
+*.iml
+.vscode/
+*.swp
+*.swo
+*~
+.settings/
+.project
+.classpath
+*.code-workspace
+
+# ===== Java / Maven =====
+target/
+*.class
+*.jar
+*.war
+*.ear
+*.log
+hs_err_pid*
+
+# ===== Node / Frontend =====
+node_modules/
+dist/
+build/
+.env
+.env.local
+.env.*.local
+*.tgz
+
+# ===== Misc =====
+*.tmp
+*.bak
+*.orig
