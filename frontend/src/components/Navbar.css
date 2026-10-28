@@ -3,19 +3,29 @@
   justify-content: space-between;
   align-items: center;
   padding: 1rem 2rem;
-  background: #1a1a2e;
+  background: rgba(26, 26, 46, 0.95);
+  backdrop-filter: blur(10px);
   color: white;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  position: sticky;
+  top: 0;
+  z-index: 100;
 }
 .navbar-brand {
   font-size: 1.5rem;
-  font-weight: bold;
+  font-weight: 800;
   color: #e94560;
   text-decoration: none;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  letter-spacing: -0.5px;
 }
 .navbar-links a {
-  color: white;
+  color: #cbd5e1;
   text-decoration: none;
   margin-left: 1.5rem;
+  font-weight: 500;
   transition: color 0.3s;
 }
 .navbar-links a:hover {

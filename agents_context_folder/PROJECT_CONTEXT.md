@@ -81,4 +81,13 @@ officewallahgames/
 
 ---
 
+## Games Roadmap
+
+| # | Game | Service Name | Port | PRD | Status |
+|---|------|-------------|------|-----|--------|
+| 01 | Games Master Catalog | `games-master-service` | 8081 | `01-games-master-service-prd.md` | ✅ Live |
+| 02 | User Management | `user-management-service` | 8082 | `02-user-management-service-prd.md` | ✅ Live |
+| 03 | Tic-Tac-Toe Arena | `tic-tac-toe-service` | 8083 | `03-tic-tac-toe-game-prd.md` | 🟡 In Progress |
+| 04 | Ludo Royale | `ludo-service` | 8084 | `04-ludo-game-prd.md` | 📋 PRD Ready |
+
 *Last Updated: 2026-10-29*

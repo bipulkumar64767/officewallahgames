@@ -28,6 +28,7 @@
 
     <modules>
         <module>common</module>
+        <module>games-master-service</module>
     </modules>
 
     <dependencies>
