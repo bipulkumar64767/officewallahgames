@@ -1,0 +1,14 @@
+server:
+  port: 8082
+spring:
+  application:
+    name: user-management-service
+  datasource:
+    url: jdbc:postgresql://localhost:5432/owg_user_db
+    username: postgres
+    password: dummy_postgres_password_replace_later
+app:
+  auth:
+    fixed-token: owg-fixed-auth-token-2026
+    snowflake-worker-id: 1
+    snowflake-datacenter-id: 1

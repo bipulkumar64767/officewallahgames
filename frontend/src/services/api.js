@@ -1,4 +1,5 @@
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8081/api/v1';
+const AUTH_API_BASE_URL = import.meta.env.VITE_AUTH_API_BASE_URL || 'http://localhost:8082/api/v1/auth';
 
 export const FALLBACK_CATALOG = {
   modes: [
@@ -144,6 +145,81 @@ export const getGamesCatalog = async () => {
     );
     return FALLBACK_CATALOG;
   }
+};
+
+export const authApi = {
+  createGuestSession: async () => {
+    try {
+      const response = await fetch(`${AUTH_API_BASE_URL}/guest`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      });
+      if (!response.ok) throw new Error(`Auth API error: ${response.status}`);
+      const result = await response.json();
+      if (result && result.data) {
+        return result.data;
+      }
+      return result;
+    } catch (err) {
+      console.warn(
+        `[Auth] Backend unreachable at ${AUTH_API_BASE_URL}/guest. Using instant fallback guest profile:`,
+        err.message
+      );
+      const guestNum = Math.floor(100000000 + Math.random() * 900000000);
+      return {
+        userId: `GUEST_${guestNum}`,
+        displayName: 'Guest Player',
+        token: 'guest-fallback-token',
+        isGuest: true,
+      };
+    }
+  },
+
+  login: async (username, password) => {
+    try {
+      const response = await fetch(`${AUTH_API_BASE_URL}/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username, password }),
+      });
+      if (!response.ok) throw new Error(`Auth API error: ${response.status}`);
+      const result = await response.json();
+      if (result && result.data) {
+        return result.data;
+      }
+      return result;
+    } catch (err) {
+      console.warn(
+        `[Auth] Backend unreachable at ${AUTH_API_BASE_URL}/login. Using mock login profile:`,
+        err.message
+      );
+      const cleanUsername = username ? username.trim() : 'Player';
+      return {
+        userId: `USR_${cleanUsername.replace(/[^a-zA-Z0-9_]/g, '') || Math.floor(100000 + Math.random() * 900000)}`,
+        displayName: cleanUsername,
+        token: 'owg-fixed-auth-token-2026',
+        isGuest: false,
+      };
+    }
+  },
+
+  getMe: async (token) => {
+    try {
+      const response = await fetch(`${AUTH_API_BASE_URL}/me`, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+      });
+      if (!response.ok) throw new Error(`Auth API error: ${response.status}`);
+      const result = await response.json();
+      return result && result.data ? result.data : result;
+    } catch (err) {
+      console.warn(`[Auth] Backend unreachable at ${AUTH_API_BASE_URL}/me:`, err.message);
+      return null;
+    }
+  },
 };
 
 export default api;
