@@ -52,12 +52,19 @@ officewallahgames/
 
 | Folder | What It Contains | How It Behaves / Rules |
 |--------|------------------|------------------------|
-| **`agent_rule_folder/`** | Agent workflows, rules & validation protocols | Read-first before writing code. Enforces quality & boundaries. |
+| **`agent_rule_folder/`** | Agent workflows, rules & validation protocols | Read-first before writing code. Enforces task decomposition & parallel sub-agents. |
 | **`agents_context_folder/`** | Project memory, tech stack info & ADR logs | Consulted for architectural clarity and domain context. |
 | **`product_prds/`** | Approved PRDs with UI designs & backend architecture | Spec required prior to any game implementation. |
 | **`rough-discussion/`** | Brainstorming notes, draft chats, test dumps | Free-form scratch workspace; non-blocking for production. |
 | **`backend/`** | Spring Boot 3.4.x, Java 21 LTS, multi-module Maven | Only backend code lives here. Each game is a microservice. |
 | **`frontend/`** | React 18+, Vite, React Router DOM | Only UI code lives here. Decoupled and independently deployable. |
+
+---
+
+## Operational Execution Principles
+1. **Always Decompose Breakable Tasks**: Whenever work can be partitioned, split it immediately.
+2. **Parallel Sub-Agents for Maximum Speed**: Run backend, frontend, documentation, and testing tasks concurrently using parallel sub-agents to deliver work as fast as possible.
+3. **Continuous Integration & Clean Commits**: Validate builds and keep git history clean and up to date.
 
 ---
 

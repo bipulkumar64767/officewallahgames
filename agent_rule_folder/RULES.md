@@ -69,6 +69,11 @@ The project is structured into distinct, isolated folders. Every agent must stri
 3. **Medium** — New games, UI screens, animations, score persistence.
 4. **Low** — Minor refactoring, documentation, style polish.
 
+### 2.3 Task Decomposition & Parallel Sub-Agent Protocol
+- **Breakable Tasks**: If a task can be divided into independent parts (e.g., Backend APIs vs. Frontend UI, multiple games, service logic vs. UI integration), **ALWAYS break it down immediately**.
+- **Parallel Sub-Agents**: Deploy parallel sub-agents to work on decomposed tasks simultaneously to achieve maximum execution speed and turnaround time.
+- **Coordination**: The orchestrating agent coordinates, integrates outputs from all sub-agents, verifies the build, and performs the final git commit.
+
 ---
 
 ## 3. Code Standards & Architecture Guidelines
