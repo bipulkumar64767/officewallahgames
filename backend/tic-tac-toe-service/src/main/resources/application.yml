@@ -1,0 +1,15 @@
+server:
+  port: 8083
+
+spring:
+  application:
+    name: tic-tac-toe-service
+  data:
+    redis:
+      host: localhost
+      port: 6379
+      password: dummy_redis_password_replace_later
+  datasource:
+    url: jdbc:postgresql://localhost:5432/owg_tictactoe_db
+    username: postgres
+    password: dummy_postgres_password_replace_later
