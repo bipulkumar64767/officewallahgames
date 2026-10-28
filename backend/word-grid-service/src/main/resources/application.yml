@@ -1,0 +1,15 @@
+server:
+  port: 8085
+
+spring:
+  application:
+    name: word-grid-service
+  data:
+    redis:
+      host: localhost
+      port: 6379
+      password: dummy_redis_password_replace_later
+  datasource:
+    url: jdbc:postgresql://localhost:5432/owg_wordgrid_db
+    username: postgres
+    password: dummy_postgres_password_replace_later

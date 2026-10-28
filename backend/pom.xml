@@ -32,6 +32,7 @@
         <module>user-management-service</module>
         <module>tic-tac-toe-service</module>
         <module>ludo-service</module>
+        <module>word-grid-service</module>
     </modules>
 
     <dependencies>

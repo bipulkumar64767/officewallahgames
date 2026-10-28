@@ -52,6 +52,21 @@ public class GameCatalogRepository {
                 .build());
 
         save(GameMetadata.builder()
+                .gameId("wordgrid")
+                .name("Word Grid Blitz")
+                .tagline("Strategic real-time 10x10 word battle")
+                .gameMode(GameMode.MULTIPLAYER)
+                .category("WORD_PVP")
+                .thumbnailUrl("/assets/games/wordgrid-thumb.png")
+                .route("/games/wordgrid")
+                .minPlayers(2)
+                .maxPlayers(4)
+                .isActive(true)
+                .isMaintenance(false)
+                .displayOrder(3)
+                .build());
+
+        save(GameMetadata.builder()
                 .gameId("snake")
                 .name("Snake Rush")
                 .tagline("Classic retro snake with modern neon visuals")
@@ -63,7 +78,7 @@ public class GameCatalogRepository {
                 .maxPlayers(1)
                 .isActive(false)
                 .isMaintenance(false)
-                .displayOrder(3)
+                .displayOrder(4)
                 .build());
 
         save(GameMetadata.builder()
@@ -78,7 +93,7 @@ public class GameCatalogRepository {
                 .maxPlayers(1)
                 .isActive(false)
                 .isMaintenance(false)
-                .displayOrder(4)
+                .displayOrder(5)
                 .build());
 
         save(GameMetadata.builder()
@@ -93,7 +108,7 @@ public class GameCatalogRepository {
                 .maxPlayers(2)
                 .isActive(false)
                 .isMaintenance(false)
-                .displayOrder(5)
+                .displayOrder(6)
                 .build());
     }
 
