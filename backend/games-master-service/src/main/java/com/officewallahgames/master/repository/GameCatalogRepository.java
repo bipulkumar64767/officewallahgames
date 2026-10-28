@@ -37,6 +37,21 @@ public class GameCatalogRepository {
                 .build());
 
         save(GameMetadata.builder()
+                .gameId("ludo")
+                .name("Ludo Royale")
+                .tagline("Real-time 2-4 player board showdown")
+                .gameMode(GameMode.MULTIPLAYER)
+                .category("BOARD_PVP")
+                .thumbnailUrl("/assets/games/ludo-thumb.png")
+                .route("/games/ludo")
+                .minPlayers(2)
+                .maxPlayers(4)
+                .isActive(true)
+                .isMaintenance(false)
+                .displayOrder(2)
+                .build());
+
+        save(GameMetadata.builder()
                 .gameId("snake")
                 .name("Snake Rush")
                 .tagline("Classic retro snake with modern neon visuals")
@@ -48,7 +63,7 @@ public class GameCatalogRepository {
                 .maxPlayers(1)
                 .isActive(false)
                 .isMaintenance(false)
-                .displayOrder(2)
+                .displayOrder(3)
                 .build());
 
         save(GameMetadata.builder()
@@ -63,7 +78,7 @@ public class GameCatalogRepository {
                 .maxPlayers(1)
                 .isActive(false)
                 .isMaintenance(false)
-                .displayOrder(3)
+                .displayOrder(4)
                 .build());
 
         save(GameMetadata.builder()
@@ -78,7 +93,7 @@ public class GameCatalogRepository {
                 .maxPlayers(2)
                 .isActive(false)
                 .isMaintenance(false)
-                .displayOrder(4)
+                .displayOrder(5)
                 .build());
     }
 

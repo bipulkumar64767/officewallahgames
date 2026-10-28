@@ -4,6 +4,7 @@ import Navbar from './components/Navbar';
 import LoginModal from './components/LoginModal';
 import Home from './pages/Home';
 import TicTacToeLobby from './pages/TicTacToeLobby';
+import LudoLobby from './pages/LudoLobby';
 
 function App() {
   return (
@@ -15,6 +16,7 @@ function App() {
           <Route path="/" element={<Home />} />
           <Route path="/games" element={<Home />} />
           <Route path="/games/tictactoe" element={<TicTacToeLobby />} />
+          <Route path="/games/ludo" element={<LudoLobby />} />
         </Routes>
       </Router>
     </AuthProvider>

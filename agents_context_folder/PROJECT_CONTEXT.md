@@ -89,5 +89,8 @@ officewallahgames/
 | 02 | User Management | `user-management-service` | 8082 | `02-user-management-service-prd.md` | ✅ Live |
 | 03 | Tic-Tac-Toe Arena | `tic-tac-toe-service` | 8083 | `03-tic-tac-toe-game-prd.md` | 🟡 In Progress |
 | 04 | Ludo Royale | `ludo-service` | 8084 | `04-ludo-game-prd.md` | 📋 PRD Ready |
+| 05 | Word Grid Blitz | `word-grid-service` | 8085 | `05-word-grid-blitz-prd.md` | 📋 PRD Ready |
+| 06 | Connect Drop | `connect-drop-service` | 8086 | `06-connect-drop-prd.md` | 📋 PRD Ready |
+| 07 | Speed Type Duel | `speed-type-service` | 8087 | `07-speed-type-duel-prd.md` | 📋 PRD Ready |
 
 *Last Updated: 2026-10-29*
