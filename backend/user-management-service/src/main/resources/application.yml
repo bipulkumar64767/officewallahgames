@@ -1,14 +1,24 @@
 server:
-  port: 8082
+  port: ${PORT:8082}
+
 spring:
   application:
     name: user-management-service
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+      ssl:
+        enabled: ${REDIS_SSL_ENABLED:false}
   datasource:
-    url: jdbc:postgresql://localhost:5432/owg_user_db
-    username: postgres
-    password: dummy_postgres_password_replace_later
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/owg_users}
+    username: ${DB_USERNAME:postgres}
+    password: ${DB_PASSWORD:postgres}
+    driver-class-name: org.postgresql.Driver
+
 app:
   auth:
-    fixed-token: owg-fixed-auth-token-2026
-    snowflake-worker-id: 1
-    snowflake-datacenter-id: 1
+    fixed-token: ${AUTH_FIXED_TOKEN:owg-fixed-auth-token-2026}
+    snowflake-worker-id: ${SNOWFLAKE_WORKER_ID:1}
+    snowflake-datacenter-id: ${SNOWFLAKE_DATACENTER_ID:1}

@@ -33,6 +33,9 @@ build/
 .env.*.local
 *.tgz
 
+# ===== Local Docs & Context (personal, not for GitHub) =====
+local-setup-docs/
+
 # ===== Misc =====
 *.tmp
 *.bak

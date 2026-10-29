@@ -2,148 +2,92 @@ package com.officewallahgames.master.repository;
 
 import com.officewallahgames.master.model.GameMetadata;
 import com.officewallahgames.master.model.GameMode;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.core.RowMapper;
 import org.springframework.stereotype.Repository;
 
-import java.util.ArrayList;
-import java.util.Comparator;
+import java.sql.ResultSet;
+import java.sql.SQLException;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
-import java.util.concurrent.ConcurrentHashMap;
 
+@Slf4j
 @Repository
+@RequiredArgsConstructor
 public class GameCatalogRepository {
 
-    private final Map<String, GameMetadata> gamesMap = new ConcurrentHashMap<>();
+    private final JdbcTemplate jdbcTemplate;
 
-    public GameCatalogRepository() {
-        seedInitialGames();
-    }
-
-    private void seedInitialGames() {
-        save(GameMetadata.builder()
-                .gameId("tictactoe")
-                .name("Tic-Tac-Toe Arena")
-                .tagline("Real-time 1v1 PvP quick rounds")
-                .gameMode(GameMode.MULTIPLAYER)
-                .category("PVP_CASUAL")
-                .thumbnailUrl("/assets/games/tictactoe-thumb.png")
-                .route("/games/tictactoe")
-                .minPlayers(2)
-                .maxPlayers(2)
-                .isActive(true)
-                .isMaintenance(false)
-                .displayOrder(1)
-                .build());
-
-        save(GameMetadata.builder()
-                .gameId("ludo")
-                .name("Ludo Royale")
-                .tagline("Real-time 2-4 player board showdown")
-                .gameMode(GameMode.MULTIPLAYER)
-                .category("BOARD_PVP")
-                .thumbnailUrl("/assets/games/ludo-thumb.png")
-                .route("/games/ludo")
-                .minPlayers(2)
-                .maxPlayers(4)
-                .isActive(true)
-                .isMaintenance(false)
-                .displayOrder(2)
-                .build());
-
-        save(GameMetadata.builder()
-                .gameId("wordgrid")
-                .name("Word Grid Blitz")
-                .tagline("Strategic real-time 10x10 word battle")
-                .gameMode(GameMode.MULTIPLAYER)
-                .category("WORD_PVP")
-                .thumbnailUrl("/assets/games/wordgrid-thumb.png")
-                .route("/games/wordgrid")
-                .minPlayers(2)
-                .maxPlayers(4)
-                .isActive(true)
-                .isMaintenance(false)
-                .displayOrder(3)
-                .build());
-
-        save(GameMetadata.builder()
-                .gameId("connectdrop")
-                .name("Connect Drop")
-                .tagline("Real-time 2-player 4-in-a-row drop duel")
-                .gameMode(GameMode.MULTIPLAYER)
-                .category("STRATEGY_PVP")
-                .thumbnailUrl("/assets/games/connectdrop-thumb.png")
-                .route("/games/connectdrop")
-                .minPlayers(2)
-                .maxPlayers(2)
-                .isActive(true)
-                .isMaintenance(false)
-                .displayOrder(4)
-                .build());
-
-        save(GameMetadata.builder()
-                .gameId("snake")
-                .name("Snake Rush")
-                .tagline("Classic retro snake with modern neon visuals")
-                .gameMode(GameMode.SINGLE_PLAYER)
-                .category("ARCADE")
-                .thumbnailUrl("/assets/games/snake-thumb.png")
-                .route("/games/snake")
-                .minPlayers(1)
-                .maxPlayers(1)
-                .isActive(false)
-                .isMaintenance(false)
-                .displayOrder(5)
-                .build());
-
-        save(GameMetadata.builder()
-                .gameId("grid2048")
-                .name("2048 Cyber Grid")
-                .tagline("Swipe and combine tiles to reach 2048")
-                .gameMode(GameMode.SINGLE_PLAYER)
-                .category("PUZZLE")
-                .thumbnailUrl("/assets/games/2048-thumb.png")
-                .route("/games/2048")
-                .minPlayers(1)
-                .maxPlayers(1)
-                .isActive(false)
-                .isMaintenance(false)
-                .displayOrder(6)
-                .build());
-
-        save(GameMetadata.builder()
-                .gameId("speedchess")
-                .name("Speed Chess Arena")
-                .tagline("Fast-paced 5-minute blitz chess matches")
-                .gameMode(GameMode.MULTIPLAYER)
-                .category("STRATEGY")
-                .thumbnailUrl("/assets/games/chess-thumb.png")
-                .route("/games/chess")
-                .minPlayers(2)
-                .maxPlayers(2)
-                .isActive(false)
-                .isMaintenance(false)
-                .displayOrder(7)
-                .build());
-    }
+    private static final RowMapper<GameMetadata> ROW_MAPPER = new RowMapper<>() {
+        @Override
+        public GameMetadata mapRow(ResultSet rs, int rowNum) throws SQLException {
+            return GameMetadata.builder()
+                    .gameId(rs.getString("game_id"))
+                    .name(rs.getString("name"))
+                    .tagline(rs.getString("tagline"))
+                    .gameMode(GameMode.valueOf(rs.getString("game_mode")))
+                    .category(rs.getString("category"))
+                    .thumbnailUrl(rs.getString("thumbnail_url"))
+                    .route(rs.getString("route"))
+                    .minPlayers(rs.getInt("min_players"))
+                    .maxPlayers(rs.getInt("max_players"))
+                    .isActive(rs.getBoolean("is_active"))
+                    .isMaintenance(rs.getBoolean("is_maintenance"))
+                    .displayOrder(rs.getInt("display_order"))
+                    .build();
+        }
+    };
 
     public List<GameMetadata> findAll() {
-        List<GameMetadata> games = new ArrayList<>(gamesMap.values());
-        games.sort(Comparator.comparingInt(GameMetadata::getDisplayOrder));
-        return games;
+        String sql = "SELECT * FROM game_metadata ORDER BY display_order ASC";
+        return jdbcTemplate.query(sql, ROW_MAPPER);
     }
 
     public Optional<GameMetadata> findById(String gameId) {
         if (gameId == null) {
             return Optional.empty();
         }
-        return Optional.ofNullable(gamesMap.get(gameId.toLowerCase()));
+        String sql = "SELECT * FROM game_metadata WHERE LOWER(game_id) = LOWER(?)";
+        List<GameMetadata> results = jdbcTemplate.query(sql, ROW_MAPPER, gameId);
+        return results.isEmpty() ? Optional.empty() : Optional.of(results.get(0));
     }
 
     public GameMetadata save(GameMetadata game) {
-        if (game != null && game.getGameId() != null) {
-            gamesMap.put(game.getGameId().toLowerCase(), game);
+        if (game == null || game.getGameId() == null) {
+            return game;
         }
+        String sql = """
+            INSERT INTO game_metadata (game_id, name, tagline, game_mode, category, thumbnail_url, route, min_players, max_players, is_active, is_maintenance, display_order)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT (game_id) DO UPDATE SET
+                name = EXCLUDED.name,
+                tagline = EXCLUDED.tagline,
+                game_mode = EXCLUDED.game_mode,
+                category = EXCLUDED.category,
+                thumbnail_url = EXCLUDED.thumbnail_url,
+                route = EXCLUDED.route,
+                min_players = EXCLUDED.min_players,
+                max_players = EXCLUDED.max_players,
+                is_active = EXCLUDED.is_active,
+                is_maintenance = EXCLUDED.is_maintenance,
+                display_order = EXCLUDED.display_order
+        """;
+        jdbcTemplate.update(sql,
+                game.getGameId(),
+                game.getName(),
+                game.getTagline(),
+                game.getGameMode().name(),
+                game.getCategory(),
+                game.getThumbnailUrl(),
+                game.getRoute(),
+                game.getMinPlayers(),
+                game.getMaxPlayers(),
+                game.isActive(),
+                game.isMaintenance(),
+                game.getDisplayOrder()
+        );
         return game;
     }
 }

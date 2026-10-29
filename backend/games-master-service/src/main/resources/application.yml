@@ -1,6 +1,18 @@
 server:
-  port: 8081
+  port: ${PORT:8081}
 
 spring:
   application:
     name: games-master-service
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+      ssl:
+        enabled: ${REDIS_SSL_ENABLED:false}
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/owg_master}
+    username: ${DB_USERNAME:postgres}
+    password: ${DB_PASSWORD:postgres}
+    driver-class-name: org.postgresql.Driver

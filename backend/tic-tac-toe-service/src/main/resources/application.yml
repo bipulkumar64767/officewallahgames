@@ -1,15 +1,18 @@
 server:
-  port: 8083
+  port: ${PORT:8083}
 
 spring:
   application:
     name: tic-tac-toe-service
   data:
     redis:
-      host: localhost
-      port: 6379
-      password: dummy_redis_password_replace_later
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+      ssl:
+        enabled: ${REDIS_SSL_ENABLED:false}
   datasource:
-    url: jdbc:postgresql://localhost:5432/owg_tictactoe_db
-    username: postgres
-    password: dummy_postgres_password_replace_later
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/owg_tictactoe}
+    username: ${DB_USERNAME:postgres}
+    password: ${DB_PASSWORD:postgres}
+    driver-class-name: org.postgresql.Driver

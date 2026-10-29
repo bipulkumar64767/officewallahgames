@@ -2,12 +2,13 @@ import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import GameModeSelector from '../components/GameModeSelector';
 import GameListStrip from '../components/GameListStrip';
-import { getGamesCatalog, FALLBACK_CATALOG } from '../services/api';
+import { getGamesCatalog } from '../services/api';
 import './Home.css';
 
 const Home = () => {
-  const [games, setGames] = useState(FALLBACK_CATALOG.games);
+  const [games, setGames] = useState([]);
   const [selectedMode, setSelectedMode] = useState('ALL');
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     let isMounted = true;
@@ -18,7 +19,9 @@ const Home = () => {
           setGames(catalog.games);
         }
       } catch (err) {
-        console.warn('Failed to load catalog, using default fallback', err);
+        console.error('Failed to load catalog from DB:', err);
+      } finally {
+        if (isMounted) setLoading(false);
       }
     };
 

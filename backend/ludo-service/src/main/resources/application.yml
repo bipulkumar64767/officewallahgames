@@ -1,15 +1,18 @@
 server:
-  port: 8084
+  port: ${PORT:8084}
 
 spring:
   application:
     name: ludo-service
   data:
     redis:
-      host: localhost
-      port: 6379
-      password: dummy_redis_password_replace_later
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+      ssl:
+        enabled: ${REDIS_SSL_ENABLED:false}
   datasource:
-    url: jdbc:postgresql://localhost:5432/owg_ludo_db
-    username: postgres
-    password: dummy_postgres_password_replace_later
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/owg_ludo}
+    username: ${DB_USERNAME:postgres}
+    password: ${DB_PASSWORD:postgres}
+    driver-class-name: org.postgresql.Driver
