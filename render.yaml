@@ -39,13 +39,10 @@ services:
   # ========================================================
   - type: web
     name: owg-games-master
-    runtime: java
-    rootDir: backend
-    buildCommand: chmod +x mvnw && ./mvnw clean package -DskipTests -pl common,games-master-service -am
-    startCommand: java -Dserver.port=$PORT -jar games-master-service/target/games-master-service-0.0.1-SNAPSHOT.jar
+    runtime: docker
+    dockerContext: backend
+    dockerfilePath: backend/games-master-service/Dockerfile
     envVars:
-      - key: JAVA_VERSION
-        value: 21
       - key: DB_URL
         value: jdbc:postgresql://pg-341588eb-meta-write.d.aivencloud.com:23090/owg_master?sslmode=require
       - key: DB_USERNAME
@@ -66,13 +63,10 @@ services:
   # ========================================================
   - type: web
     name: owg-user-management
-    runtime: java
-    rootDir: backend
-    buildCommand: chmod +x mvnw && ./mvnw clean package -DskipTests -pl common,user-management-service -am
-    startCommand: java -Dserver.port=$PORT -jar user-management-service/target/user-management-service-0.0.1-SNAPSHOT.jar
+    runtime: docker
+    dockerContext: backend
+    dockerfilePath: backend/user-management-service/Dockerfile
     envVars:
-      - key: JAVA_VERSION
-        value: 21
       - key: DB_URL
         value: jdbc:postgresql://pg-341588eb-meta-write.d.aivencloud.com:23090/owg_users?sslmode=require
       - key: DB_USERNAME
@@ -93,13 +87,10 @@ services:
   # ========================================================
   - type: web
     name: owg-tic-tac-toe
-    runtime: java
-    rootDir: backend
-    buildCommand: chmod +x mvnw && ./mvnw clean package -DskipTests -pl common,tic-tac-toe-service -am
-    startCommand: java -Dserver.port=$PORT -jar tic-tac-toe-service/target/tic-tac-toe-service-0.0.1-SNAPSHOT.jar
+    runtime: docker
+    dockerContext: backend
+    dockerfilePath: backend/tic-tac-toe-service/Dockerfile
     envVars:
-      - key: JAVA_VERSION
-        value: 21
       - key: DB_URL
         value: jdbc:postgresql://pg-341588eb-meta-write.d.aivencloud.com:23090/owg_tictactoe?sslmode=require
       - key: DB_USERNAME
@@ -120,13 +111,10 @@ services:
   # ========================================================
   - type: web
     name: owg-ludo
-    runtime: java
-    rootDir: backend
-    buildCommand: chmod +x mvnw && ./mvnw clean package -DskipTests -pl common,ludo-service -am
-    startCommand: java -Dserver.port=$PORT -jar ludo-service/target/ludo-service-0.0.1-SNAPSHOT.jar
+    runtime: docker
+    dockerContext: backend
+    dockerfilePath: backend/ludo-service/Dockerfile
     envVars:
-      - key: JAVA_VERSION
-        value: 21
       - key: DB_URL
         value: jdbc:postgresql://pg-341588eb-meta-write.d.aivencloud.com:23090/owg_ludo?sslmode=require
       - key: DB_USERNAME
@@ -147,13 +135,10 @@ services:
   # ========================================================
   - type: web
     name: owg-wordgrid
-    runtime: java
-    rootDir: backend
-    buildCommand: chmod +x mvnw && ./mvnw clean package -DskipTests -pl common,word-grid-service -am
-    startCommand: java -Dserver.port=$PORT -jar word-grid-service/target/word-grid-service-0.0.1-SNAPSHOT.jar
+    runtime: docker
+    dockerContext: backend
+    dockerfilePath: backend/word-grid-service/Dockerfile
     envVars:
-      - key: JAVA_VERSION
-        value: 21
       - key: DB_URL
         value: jdbc:postgresql://pg-341588eb-meta-write.d.aivencloud.com:23090/owg_wordgrid?sslmode=require
       - key: DB_USERNAME
@@ -174,13 +159,10 @@ services:
   # ========================================================
   - type: web
     name: owg-connectdrop
-    runtime: java
-    rootDir: backend
-    buildCommand: chmod +x mvnw && ./mvnw clean package -DskipTests -pl common,connect-drop-service -am
-    startCommand: java -Dserver.port=$PORT -jar connect-drop-service/target/connect-drop-service-0.0.1-SNAPSHOT.jar
+    runtime: docker
+    dockerContext: backend
+    dockerfilePath: backend/connect-drop-service/Dockerfile
     envVars:
-      - key: JAVA_VERSION
-        value: 21
       - key: DB_URL
         value: jdbc:postgresql://pg-341588eb-meta-write.d.aivencloud.com:23090/owg_connectdrop?sslmode=require
       - key: DB_USERNAME
