@@ -1,6 +1,6 @@
 services:
   # ========================================================
-  # 🌐 FRONTEND (React 19 + Vite Static Site)
+  # 🌐 FRONTEND (React 19 + Vite Static Site - 100% Free)
   # ========================================================
   - type: web
     name: owg-frontend
@@ -14,157 +14,37 @@ services:
         destination: /index.html
     envVars:
       - key: VITE_API_BASE_URL
-        value: https://owg-games-master.onrender.com/api/v1
+        value: https://owg-backend.onrender.com/api/v1
       - key: VITE_AUTH_API_BASE_URL
-        value: https://owg-user-management.onrender.com/api/v1/auth
+        value: https://owg-backend.onrender.com/api/v1/auth
       - key: VITE_TTT_API_BASE_URL
-        value: https://owg-tic-tac-toe.onrender.com/api/v1/tictactoe
+        value: https://owg-backend.onrender.com/api/v1/tictactoe
       - key: VITE_TTT_WS_URL
-        value: https://owg-tic-tac-toe.onrender.com/ws/tictactoe
+        value: https://owg-backend.onrender.com/ws/tictactoe
       - key: VITE_LUDO_API_BASE_URL
-        value: https://owg-ludo.onrender.com/api/v1/ludo
+        value: https://owg-backend.onrender.com/api/v1/ludo
       - key: VITE_LUDO_WS_URL
-        value: https://owg-ludo.onrender.com/ws/ludo
+        value: https://owg-backend.onrender.com/ws/ludo
       - key: VITE_WORDGRID_API_BASE_URL
-        value: https://owg-wordgrid.onrender.com/api/v1/wordgrid
+        value: https://owg-backend.onrender.com/api/v1/wordgrid
       - key: VITE_WORDGRID_WS_URL
-        value: https://owg-wordgrid.onrender.com/ws/wordgrid
+        value: https://owg-backend.onrender.com/ws/wordgrid
       - key: VITE_CONNECTDROP_API_BASE_URL
-        value: https://owg-connectdrop.onrender.com/api/v1/connectdrop
+        value: https://owg-backend.onrender.com/api/v1/connectdrop
       - key: VITE_CONNECTDROP_WS_URL
-        value: https://owg-connectdrop.onrender.com/ws/connectdrop
+        value: https://owg-backend.onrender.com/ws/connectdrop
 
   # ========================================================
-  # 01. GAMES MASTER SERVICE (Port 8081)
+  # ⚙️ UNIFIED BACKEND (All 6 Microservices in 1 Container - 100% Free)
   # ========================================================
   - type: web
-    name: owg-games-master
+    name: owg-backend
     runtime: docker
     dockerContext: backend
-    dockerfilePath: backend/games-master-service/Dockerfile
+    dockerfilePath: backend/Dockerfile
     envVars:
       - key: DB_URL
         value: jdbc:postgresql://pg-341588eb-meta-write.d.aivencloud.com:23090/owg_master?sslmode=require
-      - key: DB_USERNAME
-        value: avnadmin
-      - key: DB_PASSWORD
-        sync: false
-      - key: REDIS_HOST
-        value: charming-mako-242712.upstash.io
-      - key: REDIS_PORT
-        value: "6379"
-      - key: REDIS_PASSWORD
-        sync: false
-      - key: REDIS_SSL_ENABLED
-        value: "true"
-
-  # ========================================================
-  # 02. USER MANAGEMENT SERVICE (Port 8082)
-  # ========================================================
-  - type: web
-    name: owg-user-management
-    runtime: docker
-    dockerContext: backend
-    dockerfilePath: backend/user-management-service/Dockerfile
-    envVars:
-      - key: DB_URL
-        value: jdbc:postgresql://pg-341588eb-meta-write.d.aivencloud.com:23090/owg_users?sslmode=require
-      - key: DB_USERNAME
-        value: avnadmin
-      - key: DB_PASSWORD
-        sync: false
-      - key: REDIS_HOST
-        value: charming-mako-242712.upstash.io
-      - key: REDIS_PORT
-        value: "6379"
-      - key: REDIS_PASSWORD
-        sync: false
-      - key: REDIS_SSL_ENABLED
-        value: "true"
-
-  # ========================================================
-  # 03. TIC-TAC-TOE SERVICE (Port 8083)
-  # ========================================================
-  - type: web
-    name: owg-tic-tac-toe
-    runtime: docker
-    dockerContext: backend
-    dockerfilePath: backend/tic-tac-toe-service/Dockerfile
-    envVars:
-      - key: DB_URL
-        value: jdbc:postgresql://pg-341588eb-meta-write.d.aivencloud.com:23090/owg_tictactoe?sslmode=require
-      - key: DB_USERNAME
-        value: avnadmin
-      - key: DB_PASSWORD
-        sync: false
-      - key: REDIS_HOST
-        value: charming-mako-242712.upstash.io
-      - key: REDIS_PORT
-        value: "6379"
-      - key: REDIS_PASSWORD
-        sync: false
-      - key: REDIS_SSL_ENABLED
-        value: "true"
-
-  # ========================================================
-  # 04. LUDO ROYALE SERVICE (Port 8084)
-  # ========================================================
-  - type: web
-    name: owg-ludo
-    runtime: docker
-    dockerContext: backend
-    dockerfilePath: backend/ludo-service/Dockerfile
-    envVars:
-      - key: DB_URL
-        value: jdbc:postgresql://pg-341588eb-meta-write.d.aivencloud.com:23090/owg_ludo?sslmode=require
-      - key: DB_USERNAME
-        value: avnadmin
-      - key: DB_PASSWORD
-        sync: false
-      - key: REDIS_HOST
-        value: charming-mako-242712.upstash.io
-      - key: REDIS_PORT
-        value: "6379"
-      - key: REDIS_PASSWORD
-        sync: false
-      - key: REDIS_SSL_ENABLED
-        value: "true"
-
-  # ========================================================
-  # 05. WORD GRID BLITZ SERVICE (Port 8085)
-  # ========================================================
-  - type: web
-    name: owg-wordgrid
-    runtime: docker
-    dockerContext: backend
-    dockerfilePath: backend/word-grid-service/Dockerfile
-    envVars:
-      - key: DB_URL
-        value: jdbc:postgresql://pg-341588eb-meta-write.d.aivencloud.com:23090/owg_wordgrid?sslmode=require
-      - key: DB_USERNAME
-        value: avnadmin
-      - key: DB_PASSWORD
-        sync: false
-      - key: REDIS_HOST
-        value: charming-mako-242712.upstash.io
-      - key: REDIS_PORT
-        value: "6379"
-      - key: REDIS_PASSWORD
-        sync: false
-      - key: REDIS_SSL_ENABLED
-        value: "true"
-
-  # ========================================================
-  # 06. CONNECT DROP SERVICE (Port 8086)
-  # ========================================================
-  - type: web
-    name: owg-connectdrop
-    runtime: docker
-    dockerContext: backend
-    dockerfilePath: backend/connect-drop-service/Dockerfile
-    envVars:
-      - key: DB_URL
-        value: jdbc:postgresql://pg-341588eb-meta-write.d.aivencloud.com:23090/owg_connectdrop?sslmode=require
       - key: DB_USERNAME
         value: avnadmin
       - key: DB_PASSWORD
