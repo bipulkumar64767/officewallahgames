@@ -126,6 +126,17 @@ const createInitialTokens = () => {
 
 const ALL_COLORS = ['RED', 'BLUE', 'GREEN', 'YELLOW'];
 
+const REALISTIC_NAMES = [
+  'Aarav_Sharma',
+  'Vikram_R',
+  'Sneha_Patel',
+  'CyberNinja99',
+  'Rohan_Verma',
+  'Priya_K',
+  'Aditya_M',
+  'Neha_Singh',
+];
+
 export const LudoLobby = () => {
   const { user } = useAuth();
   const [searchParams] = useSearchParams();
@@ -134,6 +145,20 @@ export const LudoLobby = () => {
   const [view, setView] = useState('LOBBY');
   const [playerCount, setPlayerCount] = useState(2); // 2 | 3 | 4
   const [isSoloAI, setIsSoloAI] = useState(false);
+
+  // Roles & Ready states
+  const [isHost, setIsHost] = useState(false);
+  const [readyStates, setReadyStates] = useState({
+    RED: true,
+    GREEN: false,
+    YELLOW: false,
+    BLUE: false,
+  });
+
+  // Quick Match state
+  const [isSearchingMatch, setIsSearchingMatch] = useState(false);
+  const [matchSearchTimer, setMatchSearchTimer] = useState(12);
+  const searchTimerRef = useRef(null);
 
   // Room state
   const [roomCode, setRoomCode] = useState(() => {
@@ -175,6 +200,8 @@ export const LudoLobby = () => {
     playerNames: {},
     myColor: 'RED',
     isSoloAI: false,
+    isHost: false,
+    readyStates: { RED: true, GREEN: false, YELLOW: false, BLUE: false },
     consecutiveSixes: 0,
     rankings: [],
     playerCount: 2,
@@ -192,6 +219,8 @@ export const LudoLobby = () => {
       playerNames,
       myColor,
       isSoloAI,
+      isHost,
+      readyStates,
       consecutiveSixes,
       rankings,
       playerCount,
@@ -207,6 +236,8 @@ export const LudoLobby = () => {
     playerNames,
     myColor,
     isSoloAI,
+    isHost,
+    readyStates,
     consecutiveSixes,
     rankings,
     playerCount,
@@ -540,32 +571,120 @@ export const LudoLobby = () => {
   }, [view, isGameOver, passTurnToNext, showToast]);
 
   // Real-time WebSocket synchronization
+  const handleSocketEvent = useCallback(
+    (evt) => {
+      if (!evt || !evt.type) return;
+
+      if (evt.type === 'PLAYER_JOINED') {
+        const color = evt.color;
+        const joinedName = evt.playerName || `Player (${color})`;
+        setSlotStates((prev) => ({
+          ...prev,
+          [color]: 'ACTIVE',
+        }));
+        setPlayerNames((prev) => ({
+          ...prev,
+          [color]: joinedName,
+        }));
+        setReadyStates((prev) => ({
+          ...prev,
+          [color]: false,
+        }));
+        showToast(`🎮 ${joinedName} joined the room as ${color}!`, 2500);
+
+        // If this user is Host, send ROOM_SYNC back so guest receives full room status
+        if (stateRef.current.isHost) {
+          setTimeout(() => {
+            if (stateRef.current.sessionId) {
+              ludoSocket.sendRoomEvent(stateRef.current.sessionId, {
+                type: 'ROOM_SYNC',
+                slotStates: {
+                  ...stateRef.current.slotStates,
+                  [color]: 'ACTIVE',
+                },
+                playerNames: {
+                  ...stateRef.current.playerNames,
+                  [color]: joinedName,
+                },
+                readyStates: {
+                  ...stateRef.current.readyStates,
+                  RED: true,
+                  [color]: false,
+                },
+                playerCount: stateRef.current.playerCount,
+              });
+            }
+          }, 150);
+        }
+      } else if (evt.type === 'ROOM_SYNC') {
+        if (evt.slotStates) setSlotStates(evt.slotStates);
+        if (evt.playerNames) setPlayerNames(evt.playerNames);
+        if (evt.readyStates) setReadyStates(evt.readyStates);
+        if (evt.playerCount) setPlayerCount(evt.playerCount);
+      } else if (evt.type === 'PLAYER_READY') {
+        const { color, isReady } = evt;
+        setReadyStates((prev) => ({
+          ...prev,
+          [color]: !!isReady,
+        }));
+        const pName = stateRef.current.playerNames[color] || color;
+        showToast(`${pName} is ${isReady ? 'READY 🟢' : 'NOT READY ⏳'}`, 2000);
+      } else if (evt.type === 'START_MATCH') {
+        // Starts game for EVERYONE in sync
+        const activeSlots = { ...stateRef.current.slotStates };
+        ALL_COLORS.forEach((c) => {
+          if (activeSlots[c] === 'WAITING' && stateRef.current.readyStates[c]) {
+            activeSlots[c] = 'ACTIVE';
+          }
+        });
+        setSlotStates(activeSlots);
+        setTokens(createInitialTokens());
+        setCurrentTurn('RED');
+        setRankings([]);
+        setIsGameOver(false);
+        setHasRolled(false);
+        setMovableTokens([]);
+        setConsecutiveSixes(0);
+        setTurnTimer(30);
+        setView('PLAYING');
+        showToast('🚀 Match started! RED goes first.', 3000);
+      } else if (evt.type === 'DICE_ROLLED') {
+        setDiceValue(evt.diceValue);
+        if (evt.movableTokens) setMovableTokens(evt.movableTokens);
+      } else if (evt.type === 'TOKEN_MOVED') {
+        if (evt.nextTurn) setCurrentTurn(evt.nextTurn);
+        if (evt.tokens) setTokens(evt.tokens);
+      } else if (evt.type === 'TURN_SKIPPED') {
+        showToast(`Turn skipped for ${evt.skippedColor}: ${evt.reason}`);
+        if (evt.nextTurn) setCurrentTurn(evt.nextTurn);
+      }
+    },
+    [showToast]
+  );
+
   useEffect(() => {
     if (!sessionId || isSoloAI) return;
 
     ludoSocket.connect({
       sessionId,
-      onEvent: (evt) => {
-        if (!evt || !evt.type) return;
-        if (evt.type === 'DICE_ROLLED') {
-          setDiceValue(evt.diceValue);
-          if (evt.movableTokens) setMovableTokens(evt.movableTokens);
-        } else if (evt.type === 'TOKEN_MOVED') {
-          if (evt.nextTurn) setCurrentTurn(evt.nextTurn);
-        } else if (evt.type === 'PLAYER_JOINED') {
-          if (evt.slotStates) setSlotStates(evt.slotStates);
-          showToast(`Player ${evt.playerName || evt.color} joined!`);
-        } else if (evt.type === 'TURN_SKIPPED') {
-          showToast(`Turn skipped for ${evt.skippedColor}: ${evt.reason}`);
-          if (evt.nextTurn) setCurrentTurn(evt.nextTurn);
+      onConnect: () => {
+        // If guest, broadcast PLAYER_JOINED so Host's screen updates immediately!
+        if (!stateRef.current.isHost) {
+          ludoSocket.sendRoomEvent(sessionId, {
+            type: 'PLAYER_JOINED',
+            color: stateRef.current.myColor,
+            playerId,
+            playerName,
+          });
         }
       },
+      onEvent: handleSocketEvent,
     });
 
     return () => {
       ludoSocket.disconnect();
     };
-  }, [sessionId, isSoloAI, showToast]);
+  }, [sessionId, isSoloAI, handleSocketEvent, playerId, playerName]);
 
   // URL Query auto-join effect
   useEffect(() => {
@@ -573,6 +692,7 @@ export const LudoLobby = () => {
     if (!queryRoom || view !== 'LOBBY') return;
 
     const code = queryRoom.trim().toUpperCase();
+    setIsHost(false); // Guest via URL
     getLudoRoomStatus(code)
       .then((statusRes) => {
         if (statusRes.status !== 'ABANDONED') {
@@ -587,21 +707,102 @@ export const LudoLobby = () => {
         setPlayerCount(res.playerCount || 2);
         setSlotStates(res.slotStates || getSlotStatesForCount(res.playerCount || 2));
         if (res.playerNames) setPlayerNames(res.playerNames);
+        setReadyStates({ RED: true, GREEN: false, YELLOW: false, BLUE: false });
         setView('WAITING_ROOM');
         showToast(`Joined room ${code}!`);
       })
       .catch(() => {
         setRoomCode(code);
+        setSessionId(`OWG_LDO_${code}`);
+        setMyColor('YELLOW');
+        setReadyStates({ RED: true, GREEN: false, YELLOW: false, BLUE: false });
         setView('WAITING_ROOM');
       });
   }, [searchParams, view, playerId, playerName, showToast]);
 
+  // Quick Match Handlers
+  const cancelQuickMatch = () => {
+    if (searchTimerRef.current) {
+      clearInterval(searchTimerRef.current);
+      searchTimerRef.current = null;
+    }
+    setIsSearchingMatch(false);
+    showToast('Matchmaking cancelled.');
+  };
+
+  const finalizeQuickMatchOpponent = () => {
+    setIsSearchingMatch(false);
+    setIsSoloAI(true);
+    setIsHost(true);
+    setMyColor('RED');
+
+    // Pick realistic names without [AI] label
+    const pool = [...REALISTIC_NAMES].sort(() => Math.random() - 0.5);
+    const slots = getSlotStatesForCount(playerCount);
+    const activeSlots = { ...slots };
+
+    const opponentNames = {
+      RED: `${playerName}`,
+      GREEN: slots.GREEN === 'WAITING' ? (pool.pop() || 'Aarav_Sharma') : 'No Player',
+      YELLOW: slots.YELLOW === 'WAITING' ? (pool.pop() || 'Vikram_R') : 'No Player',
+      BLUE: slots.BLUE === 'WAITING' ? (pool.pop() || 'Sneha_Patel') : 'No Player',
+    };
+
+    ALL_COLORS.forEach((c) => {
+      if (slots[c] === 'WAITING') activeSlots[c] = 'ACTIVE';
+    });
+
+    const opponentDisplay = playerCount === 2 ? opponentNames.YELLOW : `${opponentNames.YELLOW}, ${opponentNames.GREEN || ''}`;
+    setSlotStates(activeSlots);
+    setPlayerNames(opponentNames);
+    setCurrentTurn('RED');
+    setTokens(createInitialTokens());
+    setRankings([]);
+    setIsGameOver(false);
+    setHasRolled(false);
+    setMovableTokens([]);
+    setConsecutiveSixes(0);
+    setTurnTimer(30);
+    setView('PLAYING');
+    showToast(`Duelist found: ${opponentDisplay}! Match starting 🎲`, 2500);
+  };
+
+  const startQuickMatchCountdown = () => {
+    setIsSearchingMatch(true);
+    setMatchSearchTimer(12);
+
+    if (searchTimerRef.current) clearInterval(searchTimerRef.current);
+
+    const startTime = Date.now();
+    searchTimerRef.current = setInterval(() => {
+      const elapsed = Math.floor((Date.now() - startTime) / 1000);
+      const remaining = Math.max(0, 12 - elapsed);
+      setMatchSearchTimer(remaining);
+
+      if (remaining <= 1 || elapsed >= 11) {
+        clearInterval(searchTimerRef.current);
+        searchTimerRef.current = null;
+        finalizeQuickMatchOpponent();
+      }
+    }, 1000);
+  };
+
+  useEffect(() => {
+    return () => {
+      if (searchTimerRef.current) {
+        clearInterval(searchTimerRef.current);
+      }
+    };
+  }, []);
+
   // Action: Create Private Room
   const handleCreatePrivateRoom = async () => {
+    setIsHost(true);
+    setMyColor('RED');
+    setReadyStates({ RED: true, GREEN: false, YELLOW: false, BLUE: false });
     const res = await createLudoRoom({ playerId, playerName, playerCount });
     setRoomCode(res.roomCode);
     setSessionId(res.sessionId);
-    setMyColor('RED');
     setSlotStates(res.slotStates || getSlotStatesForCount(playerCount));
     setPlayerNames(res.playerNames || {
       RED: `${playerName} (Host)`,
@@ -610,47 +811,6 @@ export const LudoLobby = () => {
       BLUE: playerCount === 4 ? 'Waiting for player...' : 'No Player',
     });
     setView('WAITING_ROOM');
-  };
-
-  // Action: Quick Match
-  const handleQuickMatch = async () => {
-    const res = await queueQuickMatch({ playerId, playerName, playerCount });
-    setRoomCode(res.roomCode);
-    setSessionId(res.sessionId);
-    setMyColor(res.assignedColor || 'RED');
-    setSlotStates(res.slotStates || getSlotStatesForCount(playerCount));
-    if (res.playerNames) setPlayerNames(res.playerNames);
-    setView('PLAYING');
-    showToast('Match found! Starting Ludo Royale 🎲');
-  };
-
-  // Action: Offline / Solo AI Play
-  const handleStartSoloAI = () => {
-    setIsSoloAI(true);
-    const slots = getSlotStatesForCount(playerCount);
-    const activeSlots = { ...slots };
-
-    const aiNames = {
-      RED: `${playerName} (You)`,
-      GREEN: slots.GREEN === 'WAITING' ? 'CyberNeon [AI]' : 'No Player',
-      YELLOW: slots.YELLOW === 'WAITING' ? 'GridMaster [AI]' : 'No Player',
-      BLUE: slots.BLUE === 'WAITING' ? 'NexusRunner [AI]' : 'No Player',
-    };
-
-    // Activate all configured player slots
-    ALL_COLORS.forEach((c) => {
-      if (slots[c] === 'WAITING') activeSlots[c] = 'ACTIVE';
-    });
-
-    setSlotStates(activeSlots);
-    setPlayerNames(aiNames);
-    setMyColor('RED');
-    setCurrentTurn('RED');
-    setTokens(createInitialTokens());
-    setRankings([]);
-    setIsGameOver(false);
-    setView('PLAYING');
-    showToast(`Solo match started vs AI! You are RED.`);
   };
 
   // Copy shareable room link
@@ -670,6 +830,7 @@ export const LudoLobby = () => {
       return;
     }
 
+    setIsHost(false); // Guest via Code
     try {
       const statusRes = await getLudoRoomStatus(code);
       if (statusRes && statusRes.status === 'ABANDONED') {
@@ -684,48 +845,52 @@ export const LudoLobby = () => {
       setPlayerCount(res.playerCount || 2);
       setSlotStates(res.slotStates || getSlotStatesForCount(res.playerCount || 2));
       if (res.playerNames) setPlayerNames(res.playerNames);
+      setReadyStates({ RED: true, GREEN: false, YELLOW: false, BLUE: false });
       setView('WAITING_ROOM');
       showToast(`Joined room ${code}!`);
     } catch (err) {
       console.warn('Failed to query or join room, fallback to waiting room:', err);
       setRoomCode(code);
+      setSessionId(`OWG_LDO_${code}`);
+      setMyColor('YELLOW');
+      setReadyStates({ RED: true, GREEN: false, YELLOW: false, BLUE: false });
       setView('WAITING_ROOM');
       showToast(`Joined room ${code}!`);
     }
   };
 
-  // Start match from waiting room
-  const handleStartMatchFromRoom = () => {
-    const activeCount = ALL_COLORS.filter(
-      (c) =>
-        slotStates[c] === 'ACTIVE' ||
-        (playerNames[c] &&
-          !playerNames[c].includes('Waiting') &&
-          !playerNames[c].includes('No Player'))
-    ).length;
+  // Guest Toggle Ready Action
+  const handleToggleReady = () => {
+    const nextReady = !readyStates[myColor];
+    setReadyStates((prev) => ({ ...prev, [myColor]: nextReady }));
+    if (sessionId) {
+      ludoSocket.sendPlayerReady(sessionId, playerId, myColor, nextReady);
+    }
+  };
 
-    if (activeCount < 2) {
-      showToast(
-        '⚠️ Only you are active! Waiting for at least 1 more player to join before starting.',
-        3000
-      );
-      return;
+  // Host Start Match Action
+  const handleHostStartMatch = () => {
+    if (!canStart) return;
+
+    if (sessionId) {
+      ludoSocket.sendStartMatch(sessionId);
     }
 
     const activeSlots = { ...slotStates };
-    const names = { ...playerNames };
-
     ALL_COLORS.forEach((c) => {
-      if (activeSlots[c] === 'WAITING') {
+      if (activeSlots[c] === 'WAITING' && readyStates[c]) {
         activeSlots[c] = 'ACTIVE';
-        names[c] = names[c].includes('Waiting') ? `${c} Bot [AI]` : names[c];
       }
     });
-
     setSlotStates(activeSlots);
-    setPlayerNames(names);
+    setTokens(createInitialTokens());
+    setCurrentTurn('RED');
+    setRankings([]);
+    setIsGameOver(false);
+    setHasRolled(false);
+    setTurnTimer(30);
     setView('PLAYING');
-    showToast('Match starting now! Good luck!');
+    showToast('🚀 Match started! RED goes first.');
   };
 
   // Render tokens located on a specific (row, col)
@@ -915,13 +1080,19 @@ export const LudoLobby = () => {
     );
   };
 
-  const activeCount = ALL_COLORS.filter(
+  const joinedColors = ALL_COLORS.filter(
     (c) =>
       slotStates[c] === 'ACTIVE' ||
-      (playerNames[c] &&
+      (slotStates[c] !== 'INACTIVE_SETUP' &&
+        slotStates[c] !== 'OFFLINE' &&
+        slotStates[c] !== 'NOT_AVAILABLE' &&
+        playerNames[c] &&
         !playerNames[c].includes('Waiting') &&
         !playerNames[c].includes('No Player'))
-  ).length;
+  );
+  const activeCount = joinedColors.length;
+  const allReady = activeCount >= 2 && joinedColors.every((c) => !!readyStates[c]);
+  const canStart = activeCount >= 2 && allReady;
 
   return (
     <div className="ludo-lobby-container">
@@ -948,79 +1119,130 @@ export const LudoLobby = () => {
 
         {/* View: LOBBY */}
         {view === 'LOBBY' && (
-          <div>
+          <div className="lobby-content">
             {/* Player Count Segmented Control */}
-            <div className="player-count-picker" role="radiogroup" aria-label="Player Count">
-              {[2, 3, 4].map((count) => (
-                <button
-                  key={count}
-                  type="button"
-                  className={`player-count-btn ${playerCount === count ? 'active' : ''}`}
-                  onClick={() => setPlayerCount(count)}
-                >
-                  <span>{count === 2 ? '👥' : count === 3 ? '⚔️' : '👑'}</span>
-                  <span>{count} Players</span>
-                </button>
-              ))}
+            <div className="lobby-count-wrapper">
+              <span className="lobby-count-label">Game Mode:</span>
+              <div className="player-count-picker" role="radiogroup" aria-label="Player Count">
+                {[2, 3, 4].map((count) => (
+                  <button
+                    key={count}
+                    type="button"
+                    className={`player-count-btn ${playerCount === count ? 'active' : ''}`}
+                    onClick={() => setPlayerCount(count)}
+                    disabled={isSearchingMatch}
+                  >
+                    <span>{count === 2 ? '👥' : count === 3 ? '⚔️' : '👑'}</span>
+                    <span>{count} Players</span>
+                  </button>
+                ))}
+              </div>
             </div>
 
-            {/* Action Buttons */}
-            <div className="lobby-actions">
-              <button
-                type="button"
-                className="btn-primary-ludo"
-                onClick={handleQuickMatch}
-              >
-                <span>⚡</span>
-                <span>Quick Match</span>
-              </button>
-              <button
-                type="button"
-                className="btn-secondary-ludo"
-                onClick={handleCreatePrivateRoom}
-              >
-                <span>🔗</span>
-                <span>Play with Friends</span>
-              </button>
-              <button
-                type="button"
-                className="btn-solo-ludo"
-                onClick={handleStartSoloAI}
-              >
-                <span>🤖</span>
-                <span>Play Solo vs AI</span>
-              </button>
-            </div>
-
-            {/* Join with Room Code */}
-            <div className="lobby-join-wrapper">
-              <div className="lobby-join-box">
-                <div className="lobby-join-input-wrap">
-                  <span className="lobby-join-icon">🔑</span>
-                  <input
-                    type="text"
-                    className="lobby-join-input"
-                    placeholder="Enter Room Code (e.g. LDO-9421)"
-                    value={joinCodeInput}
-                    onChange={(e) => setJoinCodeInput(e.target.value.toUpperCase())}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') {
-                        e.preventDefault();
-                        handleJoinByCode(joinCodeInput);
-                      }
-                    }}
-                    maxLength={16}
-                    aria-label="Join with Room Code"
-                  />
+            {/* Exactly 2 options/cards */}
+            <div className="lobby-cards-grid">
+              {/* 1. Quick Match Card */}
+              <div className="lobby-card quick-match-card">
+                <div className="card-top-badge">
+                  <span className="ludo-pulse-dot" />
+                  <span>Instant Matchmaking</span>
                 </div>
-                <button
-                  type="button"
-                  className="btn-join-room"
-                  onClick={() => handleJoinByCode(joinCodeInput)}
-                >
-                  <span>🚪</span>
-                  <span>Join Room</span>
-                </button>
+                <div className="card-header">
+                  <div className="card-icon">⚡</div>
+                  <h2 className="card-title">Quick Match</h2>
+                </div>
+                <p className="card-description">
+                  Jump straight into a fast-paced duel! Instant matchmaking searches for online duelists in your selected {playerCount}-player mode.
+                </p>
+
+                {isSearchingMatch ? (
+                  <div className="searching-match-box">
+                    <div className="searching-radar-spinner" />
+                    <div className="searching-match-text">
+                      🔍 Searching for online duelist... ({matchSearchTimer}s)
+                    </div>
+                    <button
+                      type="button"
+                      className="btn-cancel-search"
+                      onClick={cancelQuickMatch}
+                    >
+                      Cancel Search
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    className="btn-primary-ludo card-action-btn"
+                    onClick={startQuickMatchCountdown}
+                  >
+                    <span>⚡</span>
+                    <span>Quick Match</span>
+                  </button>
+                )}
+              </div>
+
+              {/* 2. Private Room Card */}
+              <div className="lobby-card private-room-card">
+                <div className="card-top-badge private-badge">
+                  <span>🔗 Custom Lobby</span>
+                </div>
+                <div className="card-header">
+                  <div className="card-icon">🔗</div>
+                  <h2 className="card-title">Private Room</h2>
+                </div>
+                <p className="card-description">
+                  Play exclusively with your friends via private room code or shareable invite link.
+                </p>
+
+                <div className="private-sub-options">
+                  {/* Sub-option 1: Create Room */}
+                  <div className="private-sub-block">
+                    <button
+                      type="button"
+                      className="btn-secondary-ludo card-sub-btn"
+                      onClick={handleCreatePrivateRoom}
+                    >
+                      <span>➕</span>
+                      <span>Create Room</span>
+                    </button>
+                  </div>
+
+                  <div className="sub-options-divider">
+                    <span>OR JOIN BY CODE</span>
+                  </div>
+
+                  {/* Sub-option 2: Join by Code */}
+                  <div className="private-sub-block">
+                    <div className="lobby-join-box card-join-box">
+                      <div className="lobby-join-input-wrap">
+                        <span className="lobby-join-icon">🔑</span>
+                        <input
+                          type="text"
+                          className="lobby-join-input"
+                          placeholder="Enter Room Code (e.g. LDO-9421)"
+                          value={joinCodeInput}
+                          onChange={(e) => setJoinCodeInput(e.target.value.toUpperCase())}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              e.preventDefault();
+                              handleJoinByCode(joinCodeInput);
+                            }
+                          }}
+                          maxLength={16}
+                          aria-label="Join with Room Code"
+                        />
+                      </div>
+                      <button
+                        type="button"
+                        className="btn-join-room"
+                        onClick={() => handleJoinByCode(joinCodeInput)}
+                      >
+                        <span>🚪</span>
+                        <span>Join Room</span>
+                      </button>
+                    </div>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
@@ -1036,7 +1258,10 @@ export const LudoLobby = () => {
               <button
                 type="button"
                 className="modal-close-btn"
-                onClick={() => setView('LOBBY')}
+                onClick={() => {
+                  setView('LOBBY');
+                  ludoSocket.disconnect();
+                }}
               >
                 ✕
               </button>
@@ -1063,7 +1288,7 @@ export const LudoLobby = () => {
             {activeCount < 2 && (
               <div className="waiting-room-alert-banner">
                 <span className="waiting-alert-text">
-                  ⚠️ Only you are active in this room. Share your room code or copy link above so friends can join before starting!
+                  ⚠️ Only you are in this room. Share your room code or copy link above so friends can join before starting!
                 </span>
               </div>
             )}
@@ -1072,8 +1297,13 @@ export const LudoLobby = () => {
             <div className="slots-preview-grid">
               {ALL_COLORS.map((col) => {
                 const state = slotStates[col];
-                const isHost = col === 'RED';
-                const isInactive = state === 'INACTIVE_SETUP' || state === 'OFFLINE' || state === 'NOT_AVAILABLE';
+                const isSlotHost = col === 'RED';
+                const isInactive =
+                  state === 'INACTIVE_SETUP' ||
+                  state === 'OFFLINE' ||
+                  state === 'NOT_AVAILABLE';
+                const isJoined = !isInactive && (state === 'ACTIVE' || (playerNames[col] && !playerNames[col].includes('Waiting')));
+                const isReady = readyStates[col];
 
                 return (
                   <div
@@ -1086,7 +1316,17 @@ export const LudoLobby = () => {
                     <div className="slot-details">
                       <div className="slot-name">{playerNames[col] || col}</div>
                       <div className="slot-status-text">
-                        {isHost ? 'Host (You)' : isInactive ? 'No Player' : state}
+                        {isSlotHost ? (
+                          <span className="slot-pill ready">👑 Host (Ready)</span>
+                        ) : isJoined ? (
+                          <span className={`slot-pill ${isReady ? 'ready' : 'not-ready'}`}>
+                            {isReady ? '🟢 Ready' : '⏳ Not Ready'}
+                          </span>
+                        ) : isInactive ? (
+                          'No Player'
+                        ) : (
+                          'Waiting for player...'
+                        )}
                       </div>
                     </div>
                     {isInactive && <div className="slot-badge-x">✕</div>}
@@ -1096,22 +1336,73 @@ export const LudoLobby = () => {
             </div>
 
             {/* Modal Actions */}
-            <div style={{ display: 'flex', gap: '1rem', justifyContent: 'flex-end' }}>
-              <button
-                type="button"
-                className="btn-solo-ludo"
-                onClick={() => setView('LOBBY')}
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                className="btn-primary-ludo"
-                onClick={handleStartMatchFromRoom}
-              >
-                <span>🚀</span>
-                <span>Start Match</span>
-              </button>
+            <div className="waiting-room-footer">
+              {isHost ? (
+                <>
+                  <div className="host-guidance-text">
+                    {activeCount < 2
+                      ? 'Waiting for at least 1 other player to join before starting.'
+                      : (!allReady
+                        ? 'Waiting for all joined players to mark themselves as Ready.'
+                        : 'All players are Ready! Press Start Match to begin.')}
+                  </div>
+                  <div className="waiting-modal-actions">
+                    <button
+                      type="button"
+                      className="btn-solo-ludo"
+                      onClick={() => {
+                        setView('LOBBY');
+                        ludoSocket.disconnect();
+                      }}
+                    >
+                      Leave Room
+                    </button>
+                    <button
+                      type="button"
+                      className={`btn-primary-ludo ${!canStart ? 'btn-disabled' : ''}`}
+                      disabled={!canStart}
+                      onClick={handleHostStartMatch}
+                    >
+                      <span>🚀</span>
+                      <span>
+                        {activeCount < 2
+                          ? 'Waiting for players to join...'
+                          : (!allReady
+                            ? 'Waiting for all players to be Ready...'
+                            : 'Start Match')}
+                      </span>
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="guest-ready-status">
+                    {readyStates[myColor]
+                      ? '🟢 You are Ready! Waiting for Host to start match...'
+                      : '⏳ Click "Mark as Ready" when you are set to play!'}
+                  </div>
+                  <div className="waiting-modal-actions">
+                    <button
+                      type="button"
+                      className="btn-solo-ludo"
+                      onClick={() => {
+                        setView('LOBBY');
+                        ludoSocket.disconnect();
+                      }}
+                    >
+                      Leave Room
+                    </button>
+                    <button
+                      type="button"
+                      className={`btn-ready-toggle ${readyStates[myColor] ? 'is-ready' : 'not-ready'}`}
+                      onClick={handleToggleReady}
+                    >
+                      <span>{readyStates[myColor] ? '🟢' : '⏳'}</span>
+                      <span>{readyStates[myColor] ? "I'm Ready" : 'Mark as Ready'}</span>
+                    </button>
+                  </div>
+                </>
+              )}
             </div>
           </div>
         </div>

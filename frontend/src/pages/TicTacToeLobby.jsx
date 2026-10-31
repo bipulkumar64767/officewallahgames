@@ -12,15 +12,30 @@ import './TicTacToeLobby.css';
 
 const INITIAL_BOARD = Array(9).fill('');
 
+const REALISTIC_BOT_NAMES = [
+  'Aarav_Sharma',
+  'Vikram_R',
+  'Sneha_Patel',
+  'CyberNinja99',
+  'Rohan_Verma',
+  'Priya_K',
+  'Aditya_M',
+  'Neha_Singh',
+];
+
 const TicTacToeLobby = () => {
   const { user } = useAuth();
   const [searchParams] = useSearchParams();
 
   // Active view: 'LOBBY' | 'WAITING_ROOM' | 'PLAYING'
   const [view, setView] = useState('LOBBY');
-  const [gameMode, setGameMode] = useState('VS_AI'); // 'VS_AI' | 'QUICK_MATCH' | 'PRIVATE'
+  const [gameMode, setGameMode] = useState('QUICK_MATCH'); // 'QUICK_MATCH' | 'PRIVATE'
 
-  // Room & Player state
+  // Room & Host/Guest state
+  const [isHost, setIsHost] = useState(false);
+  const [isReady, setIsReady] = useState(false); // Guest's own ready state
+  const [opponentReady, setOpponentReady] = useState(false); // Opponent's ready state
+  const [opponentJoined, setOpponentJoined] = useState(false); // Whether opponent has connected
   const [roomCode, setRoomCode] = useState('');
   const [sessionId, setSessionId] = useState('');
   const [joinCodeInput, setJoinCodeInput] = useState(() => {
@@ -30,6 +45,10 @@ const TicTacToeLobby = () => {
   const [playerXName, setPlayerXName] = useState('Player X');
   const [playerOName, setPlayerOName] = useState('Player O');
   const [isAiOpponent, setIsAiOpponent] = useState(false);
+
+  // Quick match countdown
+  const [isSearching, setIsSearching] = useState(false);
+  const [searchCountdown, setSearchCountdown] = useState(12);
 
   // Gameplay state
   const [board, setBoard] = useState(INITIAL_BOARD);
@@ -45,21 +64,33 @@ const TicTacToeLobby = () => {
   // Hover ghost preview
   const [hoveredCell, setHoveredCell] = useState(null);
 
-  // State refs for async callbacks
+  // State refs for async callbacks & websockets
   const boardRef = useRef(board);
   const currentTurnRef = useRef(currentTurn);
   const isGameOverRef = useRef(isGameOver);
   const mySymbolRef = useRef(mySymbol);
+  const isHostRef = useRef(isHost);
+  const sessionIdRef = useRef(sessionId);
+  const playerIdRef = useRef(user?.userId || 'GUEST_LOCAL');
+  const playerNameRef = useRef(user?.displayName || 'Player');
+  const viewRef = useRef(view);
+  const searchTimerRef = useRef(null);
+  const hasAutoJoinedRef = useRef(false);
+
+  const playerId = user?.userId || 'GUEST_LOCAL';
+  const playerName = user?.displayName || 'Player';
 
   useEffect(() => {
     boardRef.current = board;
     currentTurnRef.current = currentTurn;
     isGameOverRef.current = isGameOver;
     mySymbolRef.current = mySymbol;
-  }, [board, currentTurn, isGameOver, mySymbol]);
-
-  const playerId = user?.userId || 'GUEST_LOCAL';
-  const playerName = user?.displayName || 'Player';
+    isHostRef.current = isHost;
+    sessionIdRef.current = sessionId;
+    playerIdRef.current = playerId;
+    playerNameRef.current = playerName;
+    viewRef.current = view;
+  }, [board, currentTurn, isGameOver, mySymbol, isHost, sessionId, playerId, playerName, view]);
 
   // Handle Confetti Celebration
   const triggerCelebration = useCallback(() => {
@@ -125,26 +156,64 @@ const TicTacToeLobby = () => {
     setTurnTimer(30);
     setStatusMessage('New round started! Player X starts.');
 
-    if (gameMode !== 'VS_AI' && sessionId) {
+    if (!isAiOpponent && sessionId) {
       tictactoeSocket.requestRematch(sessionId, playerId, mySymbol);
     }
 
     if (isAiOpponent && mySymbol === 'O') {
       scheduleAiMove(INITIAL_BOARD, 'X');
     }
-  }, [gameMode, sessionId, playerId, mySymbol, isAiOpponent, scheduleAiMove]);
+  }, [sessionId, playerId, mySymbol, isAiOpponent, scheduleAiMove]);
 
   // WebSocket incoming message handler
   const handleSocketMessage = useCallback(
     (payload) => {
       if (!payload) return;
 
-      if (payload.type === 'PLAYER_JOINED' || payload.status === 'ACTIVE') {
-        if (payload.playerO) setPlayerOName(payload.playerO);
-        if (payload.playerX) setPlayerXName(payload.playerX);
-        setView('PLAYING');
+      if (payload.type === 'PLAYER_JOINED') {
+        // Someone joined the private room
+        if (payload.playerId !== playerIdRef.current) {
+          const guestName = payload.playerName || payload.playerO || 'Challenger';
+          setPlayerOName(guestName);
+          setOpponentJoined(true);
+          setStatusMessage(`${guestName} joined the room!`);
+
+          // If Host, announce host presence and identity back
+          if (isHostRef.current) {
+            tictactoeSocket.sendRoomEvent(sessionIdRef.current, {
+              type: 'HOST_INFO',
+              playerName: playerNameRef.current,
+              playerId: playerIdRef.current,
+            });
+          }
+        }
+      } else if (payload.type === 'HOST_INFO') {
+        if (!isHostRef.current && payload.playerName) {
+          setPlayerXName(payload.playerName);
+        }
+      } else if (payload.type === 'PLAYER_READY') {
+        if (payload.playerId !== playerIdRef.current) {
+          setOpponentReady(Boolean(payload.isReady));
+          setStatusMessage(
+            payload.isReady
+              ? `${payload.playerName || 'Opponent'} is ready to battle!`
+              : `${payload.playerName || 'Opponent'} is not ready.`
+          );
+        }
+      } else if (payload.type === 'START_MATCH') {
+        // Transition both host and guest immediately into PLAYING
+        setBoard(INITIAL_BOARD);
+        setCurrentTurn('X');
         setTurnTimer(30);
-        setStatusMessage('Opponent connected! Game begins.');
+        setIsGameOver(false);
+        setWinner(null);
+        setWinningPattern(null);
+        setView('PLAYING');
+        setStatusMessage(
+          mySymbolRef.current === 'X'
+            ? 'Match started! Your move (X).'
+            : 'Match started! Host moves first (X).'
+        );
       } else if (payload.type === 'MOVE_MADE' || payload.position !== undefined) {
         const { position, symbol, board: serverBoard } = payload;
         if (serverBoard && Array.isArray(serverBoard)) {
@@ -205,63 +274,85 @@ const TicTacToeLobby = () => {
   // Cleanup on unmount
   useEffect(() => {
     return () => {
+      if (searchTimerRef.current) {
+        clearInterval(searchTimerRef.current);
+      }
       tictactoeSocket.disconnect();
     };
   }, []);
 
-  // Start Quick Match
-  const startQuickMatch = async () => {
-    setLoading(true);
-    setStatusMessage('Searching for online challenger...');
+  // Quick Match: Pair with simulated realistic player
+  const pairWithSimulatedPlayer = useCallback(() => {
+    setIsSearching(false);
+    const botName = REALISTIC_BOT_NAMES[Math.floor(Math.random() * REALISTIC_BOT_NAMES.length)];
+    const assignedSymbol = 'X'; // User plays as X
+    setMySymbol(assignedSymbol);
+    setPlayerXName(playerName);
+    setPlayerOName(botName); // Shows realistic name like 'Aarav_Sharma' without [AI]
+    setIsAiOpponent(true); // AI runs under the hood
+
+    const mockSessionId = `OWG_QM_${Date.now()}`;
+    const mockRoomCode = `QM-${Math.floor(1000 + Math.random() * 9000)}`;
+    setSessionId(mockSessionId);
+    setRoomCode(mockRoomCode);
+
+    setBoard(INITIAL_BOARD);
+    setCurrentTurn('X');
+    setTurnTimer(30);
+    setIsGameOver(false);
+    setWinner(null);
+    setWinningPattern(null);
+    setView('PLAYING');
+    setStatusMessage(`Challenger found: ${botName}! Your move (X).`);
+  }, [playerName]);
+
+  // Start Quick Match with 12s countdown
+  const startQuickMatch = useCallback(() => {
     setGameMode('QUICK_MATCH');
-    try {
-      const res = await tictactoeApi.quickMatch(playerId, playerName);
-      setSessionId(res.sessionId);
-      setRoomCode(res.roomCode);
-      const symbol = res.assignedSymbol || 'X';
-      setMySymbol(symbol);
-      setPlayerXName(res.playerXName || (symbol === 'X' ? playerName : 'Opponent X'));
-      setPlayerOName(res.playerOName || (symbol === 'O' ? playerName : 'Opponent O'));
+    setIsSearching(true);
+    setSearchCountdown(12);
+    setStatusMessage('');
 
-      tictactoeSocket.connect({
-        sessionId: res.sessionId,
-        onMessage: handleSocketMessage,
-        onError: () => {
-          setIsAiOpponent(true);
-        },
-      });
-
-      if (res.isOfflineFallback) {
-        setIsAiOpponent(true);
-      } else {
-        setIsAiOpponent(false);
-      }
-
-      setBoard(INITIAL_BOARD);
-      setCurrentTurn('X');
-      setTurnTimer(30);
-      setIsGameOver(false);
-      setWinner(null);
-      setWinningPattern(null);
-      setView('PLAYING');
-      setStatusMessage(symbol === 'X' ? 'Match started! Your move (X).' : 'Match started! Opponent moves first (X).');
-
-      if (res.isOfflineFallback && symbol === 'O') {
-        scheduleAiMove(INITIAL_BOARD, 'X');
-      }
-    } catch (err) {
-      console.error('Quick match error:', err);
-      setStatusMessage('Failed to start quick match. Try offline mode.');
-    } finally {
-      setLoading(false);
+    if (searchTimerRef.current) {
+      clearInterval(searchTimerRef.current);
     }
-  };
 
-  // Create Private Room
+    let remaining = 12;
+    // Choose realistic finish time (10-12s elapsed, i.e., 0-2s remaining)
+    const finishAtRemaining = Math.floor(Math.random() * 2);
+
+    searchTimerRef.current = setInterval(() => {
+      remaining -= 1;
+      setSearchCountdown(remaining);
+
+      if (remaining <= finishAtRemaining) {
+        clearInterval(searchTimerRef.current);
+        searchTimerRef.current = null;
+        pairWithSimulatedPlayer();
+      }
+    }, 1000);
+  }, [pairWithSimulatedPlayer]);
+
+  // Cancel Quick Match
+  const cancelQuickMatch = useCallback(() => {
+    if (searchTimerRef.current) {
+      clearInterval(searchTimerRef.current);
+      searchTimerRef.current = null;
+    }
+    setIsSearching(false);
+    setSearchCountdown(12);
+    setStatusMessage('Matchmaking cancelled.');
+  }, []);
+
+  // Create Private Room (Host)
   const createPrivateRoom = async () => {
     setLoading(true);
     setStatusMessage('Creating private room...');
     setGameMode('PRIVATE');
+    setIsHost(true);
+    setIsReady(true);
+    setOpponentReady(false);
+    setOpponentJoined(false);
     try {
       const res = await tictactoeApi.createRoom(playerId, playerName);
       setRoomCode(res.roomCode);
@@ -279,62 +370,85 @@ const TicTacToeLobby = () => {
       });
     } catch (err) {
       console.error('Create room error:', err);
-      setStatusMessage('Error creating room. Try practice mode.');
+      setStatusMessage('Error creating room. Please try again.');
     } finally {
       setLoading(false);
     }
   };
 
-  // Join Private Room
-  const joinPrivateRoom = async (codeToJoin) => {
-    const code = (codeToJoin || joinCodeInput).trim().toUpperCase();
-    if (!code) {
-      setStatusMessage('Please enter a valid room code.');
-      return;
-    }
-    setLoading(true);
-    setStatusMessage(`Connecting to room ${code}...`);
-    setGameMode('PRIVATE');
-    try {
-      const res = await tictactoeApi.joinRoom(code, playerId, playerName);
-      setRoomCode(res.roomCode || code);
-      setSessionId(res.sessionId);
-      setMySymbol('O');
-      setPlayerXName(res.playerXName || 'Room Host');
-      setPlayerOName(playerName);
-      setIsAiOpponent(false);
+  // Join Private Room (Guest)
+  const joinPrivateRoom = useCallback(
+    async (codeToJoin) => {
+      const code = (codeToJoin || joinCodeInput).trim().toUpperCase();
+      if (!code) {
+        setStatusMessage('Please enter a valid room code.');
+        return;
+      }
+      setLoading(true);
+      setStatusMessage(`Connecting to room ${code}...`);
+      setGameMode('PRIVATE');
+      setIsHost(false);
+      setIsReady(false);
+      setOpponentReady(false);
+      setOpponentJoined(true);
+      try {
+        const res = await tictactoeApi.joinRoom(code, playerId, playerName);
+        setRoomCode(res.roomCode || code);
+        setSessionId(res.sessionId);
+        setMySymbol('O');
+        setPlayerXName(res.playerXName || 'Room Host');
+        setPlayerOName(playerName);
+        setIsAiOpponent(false);
 
-      tictactoeSocket.connect({
-        sessionId: res.sessionId,
-        onMessage: handleSocketMessage,
-        onError: () => {},
-      });
+        tictactoeSocket.connect({
+          sessionId: res.sessionId,
+          onConnect: () => {
+            // Inform host that guest joined!
+            tictactoeSocket.sendRoomEvent(res.sessionId, {
+              type: 'PLAYER_JOINED',
+              symbol: 'O',
+              playerId,
+              playerName,
+            });
+          },
+          onMessage: handleSocketMessage,
+          onError: () => {},
+        });
 
-      setBoard(INITIAL_BOARD);
-      setCurrentTurn(res.currentTurn || 'X');
-      setTurnTimer(30);
-      setIsGameOver(false);
-      setWinner(null);
-      setWinningPattern(null);
-      setView('PLAYING');
-      setStatusMessage(`Joined room ${code}! Waiting for host to play.`);
-    } catch (err) {
-      console.error('Join room error:', err);
-      setStatusMessage('Could not join room. Check the code and try again.');
-    } finally {
-      setLoading(false);
+        // Crucial fix: Guest STAYS in WAITING_ROOM! DO NOT setView('PLAYING')
+        setView('WAITING_ROOM');
+        setStatusMessage(`Joined room ${code}! Click "I'm Ready" when prepared.`);
+      } catch (err) {
+        console.error('Join room error:', err);
+        setStatusMessage('Could not join room. Check the code and try again.');
+      } finally {
+        setLoading(false);
+      }
+    },
+    [joinCodeInput, playerId, playerName, handleSocketMessage]
+  );
+
+  // Auto-join if room query parameter is present on initial mount
+  useEffect(() => {
+    const roomFromUrl = (searchParams.get('room') || '').trim().toUpperCase();
+    if (roomFromUrl && !hasAutoJoinedRef.current && view === 'LOBBY' && !sessionId) {
+      hasAutoJoinedRef.current = true;
+      joinPrivateRoom(roomFromUrl);
     }
+  }, [searchParams, view, sessionId, joinPrivateRoom]);
+
+  // Guest toggle ready
+  const handleToggleReady = () => {
+    const nextReady = !isReady;
+    setIsReady(nextReady);
+    tictactoeSocket.sendPlayerReady(sessionId, playerId, mySymbol, nextReady);
   };
 
-  // Start Practice vs AI
-  const startVsAi = () => {
-    setGameMode('VS_AI');
-    setRoomCode('LOCAL_AI');
-    setSessionId('SESSION_AI');
-    setMySymbol('X');
-    setPlayerXName(`${playerName} (You)`);
-    setPlayerOName('Cyber AI Bot');
-    setIsAiOpponent(true);
+  // Host starts match (only enabled if opponentJoined && opponentReady)
+  const handleHostStartMatch = () => {
+    if (!opponentJoined || !opponentReady) return;
+    tictactoeSocket.sendStartMatch(sessionId);
+    // Transition Host immediately to avoid network delay
     setBoard(INITIAL_BOARD);
     setCurrentTurn('X');
     setTurnTimer(30);
@@ -342,7 +456,7 @@ const TicTacToeLobby = () => {
     setWinner(null);
     setWinningPattern(null);
     setView('PLAYING');
-    setStatusMessage('Practice vs Cyber AI started. You are X!');
+    setStatusMessage('Match started! Your move (X).');
   };
 
   // Cell Click Handler
@@ -356,7 +470,7 @@ const TicTacToeLobby = () => {
     setBoard(newBoard);
     setTurnTimer(30);
 
-    if (gameMode !== 'VS_AI' && sessionId) {
+    if (!isAiOpponent && sessionId) {
       tictactoeSocket.sendMove(sessionId, playerId, index, mySymbol);
     }
 
@@ -376,14 +490,25 @@ const TicTacToeLobby = () => {
 
   // Return to Lobby
   const returnToLobby = () => {
+    if (searchTimerRef.current) {
+      clearInterval(searchTimerRef.current);
+      searchTimerRef.current = null;
+    }
     tictactoeSocket.disconnect();
     setView('LOBBY');
+    setIsSearching(false);
+    setSearchCountdown(12);
     setBoard(INITIAL_BOARD);
     setIsGameOver(false);
     setWinner(null);
     setWinningPattern(null);
     setRoomCode('');
     setSessionId('');
+    setIsHost(false);
+    setIsReady(false);
+    setOpponentReady(false);
+    setOpponentJoined(false);
+    setIsAiOpponent(false);
     setStatusMessage('');
   };
 
@@ -432,7 +557,7 @@ const TicTacToeLobby = () => {
         <span className="breadcrumb-current">Tic-Tac-Toe Arena</span>
       </nav>
 
-      {/* LOBBY VIEW */}
+      {/* LOBBY VIEW - Exactly 2 options */}
       {view === 'LOBBY' && (
         <div className="lobby-hero">
           <div className="lobby-hero-badge">
@@ -444,75 +569,95 @@ const TicTacToeLobby = () => {
             Stateless microservice multiplayer with instant matchmaking and private room invites.
           </p>
 
-          {/* Action Cards Grid */}
-          <div className="modes-grid">
-            {/* Quick Match Card */}
+          {/* Action Cards Grid - Exactly 2 options */}
+          <div className="modes-grid two-cards-grid">
+            {/* 1. Quick Match Card */}
             <div className="mode-card primary-card">
               <div className="mode-card-icon">⚡</div>
               <h3>Quick Match</h3>
               <p>Instantly match with an online challenger in random matchmaking queue.</p>
-              <button
-                type="button"
-                className="mode-btn btn-neon-cyan"
-                onClick={startQuickMatch}
-                disabled={loading}
-              >
-                {loading ? 'Finding Opponent...' : '⚡ Find Random Opponent'}
-              </button>
-            </div>
 
-            {/* Create Private Room Card */}
-            <div className="mode-card highlight-card">
-              <div className="mode-card-icon">🔗</div>
-              <h3>Create Private Room</h3>
-              <p>Generate a custom 6-character room code and shareable link to play with a coworker or friend.</p>
-              <button
-                type="button"
-                className="mode-btn btn-neon-magenta"
-                onClick={createPrivateRoom}
-                disabled={loading}
-              >
-                🔗 Create Private Room
-              </button>
-            </div>
-
-            {/* Join Private Room Card */}
-            <div className="mode-card">
-              <div className="mode-card-icon">🔑</div>
-              <h3>Join Private Room</h3>
-              <p>Got an invite code from a friend? Enter the 6-character room code below.</p>
-              <div className="join-form">
-                <input
-                  type="text"
-                  placeholder="e.g. TTT-7X9B"
-                  value={joinCodeInput}
-                  onChange={(e) => setJoinCodeInput(e.target.value.toUpperCase())}
-                  maxLength={10}
-                  className="join-input"
-                />
+              {isSearching ? (
+                <div className="matchmaking-search-container">
+                  <div className="matchmaking-search-header">
+                    <span className="search-pulse-ring"></span>
+                    <span className="search-pulse-dot"></span>
+                    <span className="matchmaking-timer-text">
+                      🔍 Searching for online challenger... ({searchCountdown}s)
+                    </span>
+                  </div>
+                  <div className="matchmaking-progress-track">
+                    <div
+                      className="matchmaking-progress-bar"
+                      style={{ width: `${((12 - searchCountdown) / 12) * 100}%` }}
+                    ></div>
+                  </div>
+                  <button
+                    type="button"
+                    className="mode-btn btn-outline cancel-search-btn"
+                    onClick={cancelQuickMatch}
+                  >
+                    ❌ Cancel Search
+                  </button>
+                </div>
+              ) : (
                 <button
                   type="button"
-                  className="mode-btn btn-outline"
-                  onClick={() => joinPrivateRoom()}
-                  disabled={loading || !joinCodeInput.trim()}
+                  className="mode-btn btn-neon-cyan"
+                  onClick={startQuickMatch}
+                  disabled={loading}
                 >
-                  Join Match
+                  ⚡ Find Random Opponent
                 </button>
-              </div>
+              )}
             </div>
 
-            {/* Practice vs AI Card */}
-            <div className="mode-card">
-              <div className="mode-card-icon">🤖</div>
-              <h3>Practice vs AI</h3>
-              <p>Warm up offline against smart heuristic CyberBot with instant response.</p>
-              <button
-                type="button"
-                className="mode-btn btn-neon-green"
-                onClick={startVsAi}
-              >
-                🤖 Practice vs AI (Offline)
-              </button>
+            {/* 2. Private Room Card */}
+            <div className="mode-card highlight-card private-room-card">
+              <div className="mode-card-icon">🔗</div>
+              <h3>Private Room</h3>
+              <p>Play with a coworker or friend via custom room code or direct invite link.</p>
+
+              <div className="private-room-subactions">
+                <div className="subaction-section">
+                  <span className="subaction-label">Host a New Match</span>
+                  <button
+                    type="button"
+                    className="mode-btn btn-neon-magenta"
+                    onClick={createPrivateRoom}
+                    disabled={loading || isSearching}
+                  >
+                    ➕ Create Room
+                  </button>
+                </div>
+
+                <div className="subactions-divider">
+                  <span>OR JOIN BY CODE</span>
+                </div>
+
+                <div className="subaction-section">
+                  <span className="subaction-label">Enter Room Code</span>
+                  <div className="join-form-inline">
+                    <input
+                      type="text"
+                      placeholder="e.g. TTT-7X9B"
+                      value={joinCodeInput}
+                      onChange={(e) => setJoinCodeInput(e.target.value.toUpperCase())}
+                      maxLength={10}
+                      className="join-input inline-join-input"
+                      disabled={loading || isSearching}
+                    />
+                    <button
+                      type="button"
+                      className="mode-btn btn-outline join-inline-btn"
+                      onClick={() => joinPrivateRoom()}
+                      disabled={loading || isSearching || !joinCodeInput.trim()}
+                    >
+                      🔑 Join Room
+                    </button>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
 
@@ -524,73 +669,149 @@ const TicTacToeLobby = () => {
         </div>
       )}
 
-      {/* WAITING FOR OPPONENT VIEW (Private Room Modal / Screen) */}
+      {/* WAITING ROOM VIEW (Host vs Guest) */}
       {view === 'WAITING_ROOM' && (
         <div className="lobby-hero waiting-hero">
           <div className="waiting-container">
-            <span className="lobby-status-tag">Room Created</span>
-            <h2 className="waiting-title">Invite Your Challenger</h2>
-            <p className="waiting-desc">
-              Share the room code or copy the direct link to start the match immediately once they connect.
-            </p>
+            {isHost ? (
+              /* HOST WAITING UI */
+              <>
+                <span className="lobby-status-tag">👑 Room Host</span>
+                <h2 className="waiting-title">Room {roomCode}</h2>
+                <p className="waiting-desc">
+                  Share the room code or link. The match will start once your challenger joins and marks as Ready.
+                </p>
 
-            <div className="room-code-display">
-              <span className="room-code-label">ROOM CODE</span>
-              <span className="room-code-value">{roomCode}</span>
-            </div>
+                <div className="room-code-display">
+                  <span className="room-code-label">ROOM CODE</span>
+                  <span className="room-code-value">{roomCode}</span>
+                </div>
 
-            <div className="shareable-link-box">
-              <input
-                type="text"
-                readOnly
-                value={`${window.location.origin}/games/tictactoe?room=${roomCode}`}
-                className="shareable-link-input"
-              />
-              <button
-                type="button"
-                className="copy-btn"
-                onClick={copyShareableLink}
-              >
-                {copySuccess ? '✅ Copied!' : '📋 Copy Link'}
-              </button>
-              <button
-                type="button"
-                className="copy-btn secondary-btn"
-                onClick={copyRoomCode}
-              >
-                Copy Code
-              </button>
-            </div>
+                <div className="shareable-link-box">
+                  <input
+                    type="text"
+                    readOnly
+                    value={`${window.location.origin}/games/tictactoe?room=${roomCode}`}
+                    className="shareable-link-input"
+                  />
+                  <button
+                    type="button"
+                    className="copy-btn"
+                    onClick={copyShareableLink}
+                  >
+                    {copySuccess ? '✅ Copied!' : '📋 Copy Link'}
+                  </button>
+                  <button
+                    type="button"
+                    className="copy-btn secondary-btn"
+                    onClick={copyRoomCode}
+                  >
+                    Copy Code
+                  </button>
+                </div>
 
-            {/* Pulsing Waiting Indicator */}
-            <div className="pulsing-indicator-box">
-              <div className="pulse-ring"></div>
-              <div className="pulse-dot"></div>
-              <span className="pulsing-text">Waiting for opponent to connect...</span>
-            </div>
+                {/* Opponent Status Box */}
+                <div className="waiting-opponent-card">
+                  <div className="opponent-avatar-row">
+                    <div className="opponent-avatar-icon">
+                      {opponentJoined ? '⚔️' : '⏳'}
+                    </div>
+                    <div className="opponent-meta-info">
+                      <span className="opponent-label">Challenger:</span>
+                      <span className="opponent-display-name">
+                        {opponentJoined ? playerOName : 'Waiting for opponent to join...'}
+                      </span>
+                    </div>
+                    {opponentJoined && (
+                      <span className={`ready-badge ${opponentReady ? 'badge-ready' : 'badge-not-ready'}`}>
+                        {opponentReady ? '🟢 Ready' : '⏳ Not Ready'}
+                      </span>
+                    )}
+                  </div>
 
-            {/* Offline simulation options for testing */}
-            <div className="waiting-actions">
-              <button
-                type="button"
-                className="mode-btn btn-neon-green"
-                onClick={() => {
-                  setPlayerOName('Bot Challenger');
-                  setIsAiOpponent(true);
-                  setView('PLAYING');
-                  setStatusMessage('Match started vs Bot Challenger!');
-                }}
-              >
-                🤖 Test Match Immediately (Start vs Bot)
-              </button>
-              <button
-                type="button"
-                className="mode-btn btn-outline"
-                onClick={returnToLobby}
-              >
-                🚪 Cancel &amp; Back to Lobby
-              </button>
-            </div>
+                  {!opponentJoined ? (
+                    <div className="pulsing-indicator-box">
+                      <div className="pulse-ring"></div>
+                      <div className="pulse-dot"></div>
+                      <span className="pulsing-text">Waiting for opponent to connect...</span>
+                    </div>
+                  ) : (
+                    <div className="ready-status-note">
+                      {opponentReady
+                        ? '🟢 Opponent is ready! Click "Start Match" below to begin.'
+                        : `⏳ Waiting for ${playerOName} to mark as Ready...`}
+                    </div>
+                  )}
+                </div>
+
+                {/* Host Actions */}
+                <div className="waiting-actions">
+                  <button
+                    type="button"
+                    className="mode-btn btn-neon-green start-match-btn"
+                    onClick={handleHostStartMatch}
+                    disabled={!opponentJoined || !opponentReady}
+                  >
+                    🚀 Start Match
+                  </button>
+                  <button
+                    type="button"
+                    className="mode-btn btn-outline"
+                    onClick={returnToLobby}
+                  >
+                    🚪 Cancel &amp; Back to Lobby
+                  </button>
+                </div>
+              </>
+            ) : (
+              /* GUEST WAITING UI */
+              <>
+                <span className="lobby-status-tag guest-tag">🎯 Challenger (Player O)</span>
+                <h2 className="waiting-title">Room {roomCode}</h2>
+                <p className="waiting-desc">
+                  You are connected to the room! Mark yourself as Ready so the Host can launch the game.
+                </p>
+
+                <div className="guest-room-info-card">
+                  <div className="host-info-row">
+                    <span className="host-label">👑 Room Host:</span>
+                    <strong className="host-name">{playerXName || 'Host'}</strong>
+                    <span className="host-status-badge">🟢 Connected</span>
+                  </div>
+                  <div className="room-code-mini">
+                    <span>Room Code: <strong>{roomCode}</strong></span>
+                  </div>
+                </div>
+
+                <div className="guest-ready-card">
+                  <button
+                    type="button"
+                    className={`mode-btn guest-ready-toggle-btn ${
+                      isReady ? 'btn-neon-green is-ready-active' : 'btn-neon-cyan'
+                    }`}
+                    onClick={handleToggleReady}
+                  >
+                    {isReady ? "🟢 I'm Ready (Click to Unready)" : '⏳ Mark as Ready'}
+                  </button>
+
+                  <p className="guest-ready-subtext">
+                    {isReady
+                      ? '✅ You are marked as Ready! Waiting for Host to start match...'
+                      : 'Click the button above to let the Host know you are ready to play.'}
+                  </p>
+                </div>
+
+                <div className="waiting-actions">
+                  <button
+                    type="button"
+                    className="mode-btn btn-outline"
+                    onClick={returnToLobby}
+                  >
+                    🚪 Leave Room &amp; Back to Lobby
+                  </button>
+                </div>
+              </>
+            )}
           </div>
         </div>
       )}
@@ -743,7 +964,7 @@ const TicTacToeLobby = () => {
             >
               🚪 Exit to Lobby
             </button>
-            {roomCode && roomCode !== 'LOCAL_AI' && (
+            {roomCode && (
               <span className="room-id-tag">Room: {roomCode}</span>
             )}
           </div>

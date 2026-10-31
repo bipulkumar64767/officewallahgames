@@ -155,6 +155,36 @@ export class WordGridSocketManager {
     return true;
   }
 
+  /**
+   * Room event helpers for waiting room & real-time sync
+   */
+  sendRoomEvent(sessionId, event) {
+    if (!this.client || !this.isConnected) {
+      return false;
+    }
+    this.client.publish({
+      destination: `/topic/wordgrid/${sessionId}`,
+      body: JSON.stringify(event),
+    });
+    return true;
+  }
+
+  sendPlayerReady(sessionId, playerId, slot, isReady) {
+    return this.sendRoomEvent(sessionId, {
+      type: 'PLAYER_READY',
+      playerId,
+      slot,
+      isReady,
+    });
+  }
+
+  sendStartMatch(sessionId) {
+    return this.sendRoomEvent(sessionId, {
+      type: 'START_MATCH',
+      timestamp: Date.now(),
+    });
+  }
+
   disconnect() {
     if (this.subscription) {
       try {

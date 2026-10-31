@@ -93,6 +93,33 @@ export class LudoSocketManager {
     return true;
   }
 
+  sendRoomEvent(sessionId, event) {
+    if (!this.client || !this.isConnected) {
+      return false;
+    }
+    this.client.publish({
+      destination: `/topic/ludo/${sessionId}`,
+      body: JSON.stringify(event),
+    });
+    return true;
+  }
+
+  sendPlayerReady(sessionId, playerId, color, isReady) {
+    return this.sendRoomEvent(sessionId, {
+      type: 'PLAYER_READY',
+      playerId,
+      color,
+      isReady,
+    });
+  }
+
+  sendStartMatch(sessionId) {
+    return this.sendRoomEvent(sessionId, {
+      type: 'START_MATCH',
+      timestamp: Date.now(),
+    });
+  }
+
   disconnect() {
     if (this.subscription) {
       try {

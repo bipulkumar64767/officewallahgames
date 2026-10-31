@@ -8,6 +8,7 @@ import {
   getWordGridRoomStatus,
   queueQuickMatch,
   getSlotStatesForCount,
+  generateMockRoomCode,
 } from '../services/wordgridApi';
 import { wordgridSocket } from '../services/wordgridSocket';
 import {
@@ -19,6 +20,17 @@ import {
 import './WordGridLobby.css';
 
 const ALL_SLOTS = ['P1', 'P2', 'P3', 'P4'];
+
+const REALISTIC_NAMES = [
+  'Aarav_Sharma',
+  'Vikram_R',
+  'Sneha_Patel',
+  'Ananya_Iyer',
+  'Rohan_Mehta',
+  'Pooja_Nair',
+  'Kabir_Verma',
+  'Meera_Joshi',
+];
 
 const PLAYER_METADATA = {
   P1: {
@@ -78,12 +90,26 @@ export const WordGridLobby = () => {
   const [playerCount, setPlayerCount] = useState(2); // 2 | 3 | 4
   const [isSoloAI, setIsSoloAI] = useState(false);
 
-  // Private Room Modal State
+  // Roles & Waiting Room Modal State
+  const [isHost, setIsHost] = useState(true);
+  const [readyStates, setReadyStates] = useState({
+    P1: true,
+    P2: false,
+    P3: false,
+    P4: false,
+  });
   const [isRoomModalOpen, setIsRoomModalOpen] = useState(false);
   const [roomCode, setRoomCode] = useState(() => (searchParams.get('room') || '').trim().toUpperCase());
   const [copiedLink, setCopiedLink] = useState(false);
   const [joinCodeInput, setJoinCodeInput] = useState('');
   const [isJoining, setIsJoining] = useState(false);
+
+  // Quick Match Matchmaking State
+  const [isSearchingMatch, setIsSearchingMatch] = useState(false);
+  const [searchCountdown, setSearchCountdown] = useState(12);
+  const searchCountdownRef = useRef(12);
+  const searchIntervalRef = useRef(null);
+  const [botSlots, setBotSlots] = useState(() => new Set());
 
   // Session & Identity
   const [sessionId, setSessionId] = useState('');
@@ -121,6 +147,8 @@ export const WordGridLobby = () => {
   const stateRef = useRef({
     sessionId,
     mySlot,
+    isHost,
+    readyStates,
     currentTurn,
     currentPhase,
     slotStates,
@@ -132,12 +160,15 @@ export const WordGridLobby = () => {
     claimedFingerprints,
     playerNames,
     playerCount,
+    botSlots,
   });
 
   useEffect(() => {
     stateRef.current = {
       sessionId,
       mySlot,
+      isHost,
+      readyStates,
       currentTurn,
       currentPhase,
       slotStates,
@@ -149,10 +180,13 @@ export const WordGridLobby = () => {
       claimedFingerprints,
       playerNames,
       playerCount,
+      botSlots,
     };
   }, [
     sessionId,
     mySlot,
+    isHost,
+    readyStates,
     currentTurn,
     currentPhase,
     slotStates,
@@ -164,6 +198,7 @@ export const WordGridLobby = () => {
     claimedFingerprints,
     playerNames,
     playerCount,
+    botSlots,
   ]);
 
   // Toast System
@@ -396,14 +431,14 @@ export const WordGridLobby = () => {
 
     const activeSlot = currentTurn;
     const isBot =
-      isSoloAI && activeSlot !== mySlot
-        ? true
-        : stateRef.current.playerNames[activeSlot]?.includes('[AI]');
+      (isSoloAI && activeSlot !== mySlot) ||
+      botSlots.has(activeSlot) ||
+      stateRef.current.playerNames[activeSlot]?.includes('[AI]');
 
     if (isBot) {
       executeAITurn(activeSlot);
     }
-  }, [currentTurn, view, isGameOver, isSoloAI, mySlot, executeAITurn]);
+  }, [currentTurn, view, isGameOver, isSoloAI, mySlot, executeAITurn, botSlots]);
 
   // Handle WebSocket Event Subscriptions
   const handleSocketEvent = useCallback(
@@ -422,12 +457,63 @@ export const WordGridLobby = () => {
               [event.slot]: event.playerName,
             }));
           }
+          setReadyStates((prev) => ({
+            ...prev,
+            [event.slot]: false,
+          }));
           showToast(`🎮 ${event.playerName || event.slot} joined the room!`, 'success');
+
+          // If Host, broadcast room synchronization so guest receives current slotStates, playerNames & readyStates
+          if (stateRef.current.isHost && stateRef.current.sessionId) {
+            wordgridSocket.sendRoomEvent(stateRef.current.sessionId, {
+              type: 'ROOM_SYNC',
+              slotStates: {
+                ...stateRef.current.slotStates,
+                [event.slot]: 'ACTIVE',
+              },
+              playerNames: {
+                ...stateRef.current.playerNames,
+                [event.slot]: event.playerName || stateRef.current.playerNames[event.slot],
+              },
+              readyStates: {
+                ...stateRef.current.readyStates,
+                P1: true,
+                [event.slot]: false,
+              },
+            });
+          }
           break;
         }
+        case 'PLAYER_READY': {
+          const { slot, isReady } = event;
+          setReadyStates((prev) => ({
+            ...prev,
+            [slot]: Boolean(isReady),
+          }));
+          const pName = stateRef.current.playerNames[slot] || slot;
+          showToast(
+            isReady ? `🟢 ${pName} is Ready!` : `⏳ ${pName} is not ready`,
+            'info',
+            2000
+          );
+          break;
+        }
+        case 'ROOM_SYNC': {
+          if (event.slotStates) {
+            setSlotStates((prev) => ({ ...prev, ...event.slotStates }));
+          }
+          if (event.playerNames) {
+            setPlayerNames((prev) => ({ ...prev, ...event.playerNames }));
+          }
+          if (event.readyStates) {
+            setReadyStates((prev) => ({ ...prev, ...event.readyStates, P1: true }));
+          }
+          break;
+        }
+        case 'START_MATCH':
         case 'ROOM_READY': {
-          setView('ARENA');
           setIsRoomModalOpen(false);
+          setView('ARENA');
           if (event.slotStates) setSlotStates(event.slotStates);
           if (event.firstTurn) setCurrentTurn(event.firstTurn);
           showToast('🚀 Match starting! Let the word blitz begin!', 'success');
@@ -564,15 +650,34 @@ export const WordGridLobby = () => {
             const playerName = user?.displayName || 'Player';
             joinWordGridRoom({ roomCode: urlRoom, playerId, playerName }).then((joinRes) => {
               if (joinRes) {
+                const assigned = joinRes.assignedSlot || 'P2';
                 setSessionId(joinRes.sessionId);
-                setMySlot(joinRes.assignedSlot || 'P2');
+                setRoomCode(urlRoom);
+                setIsHost(false);
+                setMySlot(assigned);
                 setSlotStates(joinRes.slotStates || getSlotStatesForCount(joinRes.playerCount || 2));
                 setPlayerCount(joinRes.playerCount || 2);
                 if (joinRes.playerNames) setPlayerNames(joinRes.playerNames);
+                setReadyStates({ P1: true, P2: false, P3: false, P4: false });
+                setIsSoloAI(false);
+                setBotSlots(new Set());
 
-                wordgridSocket.connect(joinRes.sessionId, handleSocketEvent);
-                setView('ARENA');
-                showToast(`Joined Room ${urlRoom}!`, 'success');
+                wordgridSocket.connect({
+                  sessionId: joinRes.sessionId,
+                  onEvent: handleSocketEvent,
+                  onConnect: () => {
+                    wordgridSocket.sendRoomEvent(joinRes.sessionId, {
+                      type: 'PLAYER_JOINED',
+                      slot: assigned,
+                      playerId,
+                      playerName,
+                    });
+                  },
+                });
+
+                // FIX: Open Waiting Room Modal, DO NOT jump directly into ARENA!
+                setIsRoomModalOpen(true);
+                showToast(`🎮 Joined Room ${urlRoom}! Please mark as Ready.`, 'success');
               }
             });
           }
@@ -581,78 +686,114 @@ export const WordGridLobby = () => {
     }
   }, [searchParams, user, view, sessionId, handleSocketEvent, showToast]);
 
-  // Clean up socket on unmount
+  // Clean up socket and matchmaking intervals on unmount
   useEffect(() => {
     return () => {
+      if (searchIntervalRef.current) {
+        clearInterval(searchIntervalRef.current);
+        searchIntervalRef.current = null;
+      }
       wordgridSocket.disconnect();
     };
   }, []);
 
-  // Create Private Room
+  // Create Private Room (Host)
   const handleCreatePrivateRoom = async () => {
-    const playerId = user?.userId || `GUEST_${Math.floor(100000 + Math.random() * 900000)}`;
+    const playerId = user?.userId || `HOST_${Math.floor(100000 + Math.random() * 900000)}`;
     const playerName = user?.displayName || 'Host Player';
 
     const res = await createWordGridRoom({ playerId, playerName, playerCount });
     if (res) {
       setSessionId(res.sessionId);
       setRoomCode(res.roomCode);
+      setIsHost(true);
       setMySlot('P1');
       setSlotStates(res.slotStates);
       if (res.playerNames) setPlayerNames(res.playerNames);
+      setReadyStates({ P1: true, P2: false, P3: false, P4: false });
       setIsSoloAI(false);
+      setBotSlots(new Set());
       setIsRoomModalOpen(true);
 
-      wordgridSocket.connect(res.sessionId, handleSocketEvent);
+      wordgridSocket.connect({
+        sessionId: res.sessionId,
+        onEvent: handleSocketEvent,
+      });
     }
   };
 
-  // Launch Quick Match
+  // Launch Quick Match with 12s search countdown & realistic human names fallback
   const handleQuickMatch = async () => {
-    const playerId = user?.userId || `GUEST_${Math.floor(100000 + Math.random() * 900000)}`;
-    const playerName = user?.displayName || 'Player';
+    if (isSearchingMatch) return;
 
-    const res = await queueQuickMatch({ playerId, playerName, playerCount });
-    if (res) {
-      setSessionId(res.sessionId);
-      setRoomCode(res.roomCode);
-      setMySlot('P1');
-      setSlotStates(res.slotStates);
-      if (res.playerNames) setPlayerNames(res.playerNames);
-      setIsSoloAI(false);
+    const playerId = user?.userId || `PLAYER_${Math.floor(100000 + Math.random() * 900000)}`;
+    const playerName = user?.displayName || 'Player 1';
+    const newSessionId = `OWG_QM_${Math.floor(10000 + Math.random() * 90000)}`;
+    const newRoomCode = generateMockRoomCode();
 
-      wordgridSocket.connect(res.sessionId, handleSocketEvent);
-      setView('ARENA');
-      showToast('⚡ Quick Match Found! Game starting!', 'success');
-    }
-  };
+    setSessionId(newSessionId);
+    setRoomCode(newRoomCode);
+    setIsHost(true);
+    setMySlot('P1');
+    setIsSoloAI(false);
+    setBotSlots(new Set());
 
-  // Launch Offline / Solo AI match
-  const handleStartSoloAI = () => {
-    const hostName = user?.displayName || 'You (Human)';
-    const slots = getSlotStatesForCount(playerCount);
-    const activeSlots = Object.keys(slots).filter((s) => slots[s] === 'ACTIVE' || slots[s] === 'WAITING');
-
-    const fullSlots = { ...slots };
-    const pNames = { P1: hostName };
-    const botPool = ['LexiBot [AI]', 'CipherGrid [AI]', 'AlphaWord [AI]', 'VaporLex [AI]'];
-
-    activeSlots.forEach((slot, idx) => {
-      fullSlots[slot] = 'ACTIVE';
-      if (slot !== 'P1') {
-        pNames[slot] = botPool[(idx - 1) % botPool.length];
-      }
+    // Connect to WebSocket so live players can match if available
+    wordgridSocket.connect({
+      sessionId: newSessionId,
+      onEvent: handleSocketEvent,
     });
 
-    setSessionId(`SOLO_${Date.now()}`);
-    setRoomCode('SOLO-AI');
-    setMySlot('P1');
-    setSlotStates(fullSlots);
-    setPlayerNames(pNames);
-    setIsSoloAI(true);
-    setGrid(createInitialGrid());
+    setIsSearchingMatch(true);
+    setSearchCountdown(12);
+    searchCountdownRef.current = 12;
+
+    if (searchIntervalRef.current) {
+      clearInterval(searchIntervalRef.current);
+    }
+
+    searchIntervalRef.current = setInterval(() => {
+      searchCountdownRef.current -= 1;
+      setSearchCountdown(searchCountdownRef.current);
+
+      if (searchCountdownRef.current <= 0) {
+        clearInterval(searchIntervalRef.current);
+        searchIntervalRef.current = null;
+        finalizeQuickMatch(newSessionId, newRoomCode, playerCount, playerId, playerName);
+      }
+    }, 1000);
+  };
+
+  // Finalize Quick Match: Auto-fill with realistic human names and smoothly enter arena
+  const finalizeQuickMatch = (sessId, rCode, count, playerId, playerName) => {
+    setIsSearchingMatch(false);
+
+    const slots = getSlotStatesForCount(count);
+    const neededSlots = ALL_SLOTS.filter((s) => slots[s] === 'WAITING');
+
+    const newPlayerNames = {
+      P1: playerName,
+      P2: 'No Player',
+      P3: 'No Player',
+      P4: 'No Player',
+    };
+    const newSlotStates = { ...slots, P1: 'ACTIVE' };
+    const simulatedBots = new Set();
+
+    // Auto-fill realistic human names
+    const shuffledNames = [...REALISTIC_NAMES].sort(() => 0.5 - Math.random());
+    neededSlots.forEach((slot, idx) => {
+      newSlotStates[slot] = 'ACTIVE';
+      newPlayerNames[slot] = shuffledNames[idx % shuffledNames.length];
+      simulatedBots.add(slot);
+    });
+
+    setSlotStates(newSlotStates);
+    setPlayerNames(newPlayerNames);
+    setBotSlots(simulatedBots);
     setScores({ P1: 0, P2: 0, P3: 0, P4: 0 });
     setWordsClaimedCount({ P1: 0, P2: 0, P3: 0, P4: 0 });
+    setGrid(createInitialGrid());
     setClaimedFingerprints(new Set());
     setIsGameOver(false);
     setCurrentTurn('P1');
@@ -660,7 +801,20 @@ export const WordGridLobby = () => {
     setTurnTimer(30);
 
     setView('ARENA');
-    showToast(`🤖 Playing Solo with ${playerCount - 1} AI bot opponent(s)!`, 'success');
+    setIsRoomModalOpen(false);
+    showToast('⚡ Match found! Entering arena...', 'success');
+  };
+
+  // Cancel Quick Match Search
+  const handleCancelSearch = () => {
+    if (searchIntervalRef.current) {
+      clearInterval(searchIntervalRef.current);
+      searchIntervalRef.current = null;
+    }
+    setIsSearchingMatch(false);
+    setSearchCountdown(12);
+    wordgridSocket.disconnect();
+    showToast('Matchmaking search cancelled.', 'info');
   };
 
   // Copy Private Room Shareable Link
@@ -674,7 +828,7 @@ export const WordGridLobby = () => {
     });
   };
 
-  // Action: Join Room by Room Code
+  // Action: Join Room by Room Code (Guest)
   const handleJoinByCode = async (codeToJoin) => {
     const rawCode = (codeToJoin !== undefined ? codeToJoin : joinCodeInput) || '';
     const code = rawCode.trim().toUpperCase();
@@ -703,26 +857,35 @@ export const WordGridLobby = () => {
         return;
       }
 
+      const assigned = joinRes.assignedSlot || 'P2';
       setSessionId(joinRes.sessionId);
       setRoomCode(joinRes.roomCode || code);
-      setMySlot(joinRes.assignedSlot || 'P2');
+      setIsHost(false);
+      setMySlot(assigned);
       const updatedSlotStates = joinRes.slotStates || getSlotStatesForCount(joinRes.playerCount || 2);
       setSlotStates(updatedSlotStates);
       setPlayerCount(joinRes.playerCount || 2);
       if (joinRes.playerNames) setPlayerNames(joinRes.playerNames);
+      setReadyStates({ P1: true, P2: false, P3: false, P4: false });
       setIsSoloAI(false);
+      setBotSlots(new Set());
 
-      wordgridSocket.connect(joinRes.sessionId, handleSocketEvent);
+      wordgridSocket.connect({
+        sessionId: joinRes.sessionId,
+        onEvent: handleSocketEvent,
+        onConnect: () => {
+          wordgridSocket.sendRoomEvent(joinRes.sessionId, {
+            type: 'PLAYER_JOINED',
+            slot: assigned,
+            playerId,
+            playerName,
+          });
+        },
+      });
 
-      const activeCount = ALL_SLOTS.filter((s) => updatedSlotStates[s] === 'ACTIVE').length;
-      if (joinRes.status === 'ACTIVE' || activeCount >= 2) {
-        setView('ARENA');
-        setIsRoomModalOpen(false);
-      } else {
-        setIsRoomModalOpen(true);
-      }
-
-      showToast(`🎮 Joined room ${code}!`, 'success');
+      // FIX: Open Private Room Modal, DO NOT setView('ARENA')
+      setIsRoomModalOpen(true);
+      showToast(`🎮 Joined room ${code}! Please mark as Ready.`, 'success');
       setJoinCodeInput('');
     } catch (err) {
       console.warn('Failed to join room:', err);
@@ -732,18 +895,60 @@ export const WordGridLobby = () => {
     }
   };
 
-  // Start match immediately from private room modal
-  const handleStartPrivateMatchNow = () => {
-    // Multiplayer Start Guard: ensure at least 2 active players
+  // Guest Ready State Toggle
+  const handleToggleReady = () => {
+    const newReady = !readyStates[mySlot];
+    setReadyStates((prev) => ({
+      ...prev,
+      [mySlot]: newReady,
+    }));
+    if (sessionId) {
+      wordgridSocket.sendPlayerReady(
+        sessionId,
+        user?.userId || mySlot,
+        mySlot,
+        newReady
+      );
+    }
+    showToast(newReady ? "🟢 You are marked as Ready!" : "⏳ Marked as Not Ready", 'info');
+  };
+
+  // Host: Start Match Now (Broadcasts START_MATCH to all participants)
+  const handleHostStartGame = () => {
     const activeCount = ALL_SLOTS.filter((s) => slotStates[s] === 'ACTIVE').length;
-    if (activeCount < 2) {
-      showToast('⚠️ Only you are active! Waiting for at least 1 more player to join before starting.', 'error', 3000);
+    const guestSlots = ALL_SLOTS.filter((s) => s !== 'P1' && slotStates[s] === 'ACTIVE');
+    const allGuestsReady = guestSlots.length > 0 && guestSlots.every((s) => Boolean(readyStates[s]));
+
+    if (activeCount < 2 || !allGuestsReady) {
+      showToast('⚠️ Waiting for all players to be Ready before starting!', 'error', 3000);
       return;
     }
 
+    if (sessionId) {
+      wordgridSocket.sendStartMatch(sessionId);
+    }
+
+    // Direct transition as well
     setIsRoomModalOpen(false);
     setView('ARENA');
-    showToast('🚀 Game room started!', 'success');
+    showToast('🚀 Match starting! Let the word blitz begin!', 'success');
+  };
+
+  // Play Again rematch
+  const handlePlayAgain = () => {
+    setGrid(createInitialGrid());
+    setScores({ P1: 0, P2: 0, P3: 0, P4: 0 });
+    setWordsClaimedCount({ P1: 0, P2: 0, P3: 0, P4: 0 });
+    setClaimedFingerprints(new Set());
+    setIsGameOver(false);
+    setCurrentTurn('P1');
+    setCurrentPhase('PLACE_LETTER');
+    setTurnTimer(30);
+    setFastProceedCountdown(5);
+    setSelectedEmptyIndex(null);
+    setTracedPath([]);
+    setJustPlacedIndex(null);
+    showToast('🔄 Rematch started! Good luck!', 'success');
   };
 
   // Cell Click Handler
@@ -992,93 +1197,111 @@ export const WordGridLobby = () => {
             </button>
           </div>
 
-          {/* Action Cards */}
+          {/* Action Cards: Exactly 2 Options */}
           <div className="wgb-lobby-actions">
-            <div className="wgb-action-card highlight">
+            {/* 1. Quick Match Card */}
+            <div className="wgb-action-card highlight wgb-quick-match-card">
               <div className="wgb-action-icon">⚡</div>
               <h2 className="wgb-action-title">Quick Match</h2>
               <p className="wgb-action-desc">
-                Instant matchmaking. Jump into an active 10×10 arena with live players or competitive AI bots.
+                Instant 10×10 matchmaking. Play with live opponents or auto-match seamlessly.
               </p>
-              <button className="wgb-btn-primary" onClick={handleQuickMatch}>
-                <span>⚡</span> Find Match ({playerCount}P)
-              </button>
+
+              {isSearchingMatch ? (
+                <div className="wgb-search-in-progress">
+                  <div className="wgb-search-radar">
+                    <div className="wgb-radar-ring ring-1" />
+                    <div className="wgb-radar-ring ring-2" />
+                    <div className="wgb-radar-ring ring-3" />
+                    <span className="wgb-radar-icon">⚡</span>
+                  </div>
+                  <div className="wgb-search-status-title">Searching for Opponents...</div>
+                  <div className="wgb-search-countdown-badge">⏱️ {searchCountdown}s</div>
+                  <p className="wgb-search-status-sub">
+                    Auto-filling with players in {searchCountdown}s...
+                  </p>
+                  <button className="wgb-btn-cancel-search" onClick={handleCancelSearch}>
+                    ✕ Cancel Search
+                  </button>
+                </div>
+              ) : (
+                <div className="wgb-quick-match-idle">
+                  <button className="wgb-btn-primary" onClick={handleQuickMatch}>
+                    <span>⚡</span> Find Match ({playerCount}P)
+                  </button>
+                  <div className="wgb-quick-match-hint">12s matchmaking countdown</div>
+                </div>
+              )}
             </div>
 
-            <div className="wgb-action-card">
+            {/* 2. Private Room Card (Create Room + Join by Code directly on the card) */}
+            <div className="wgb-action-card wgb-private-room-card">
               <div className="wgb-action-icon">🔗</div>
-              <h2 className="wgb-action-title">Play with Friends</h2>
+              <h2 className="wgb-action-title">Private Room</h2>
               <p className="wgb-action-desc">
-                Create a private room with a custom shareable link. Invite your colleagues or friends to join.
+                Create a private room to invite friends, or join an active match with a room code.
               </p>
-              <button className="wgb-btn-secondary" onClick={handleCreatePrivateRoom}>
-                <span>🔗</span> Create Private Room
-              </button>
-            </div>
 
-            <div className="wgb-action-card">
-              <div className="wgb-action-icon">🤖</div>
-              <h2 className="wgb-action-title">Solo / Practice AI</h2>
-              <p className="wgb-action-desc">
-                Play immediately offline against smart AI bots. Perfect for warming up word vocabulary and testing.
-              </p>
-              <button className="wgb-btn-outline" onClick={handleStartSoloAI}>
-                <span>🤖</span> Practice Solo ({playerCount}P)
-              </button>
-            </div>
-          </div>
+              <div className="wgb-private-card-body">
+                <button className="wgb-btn-primary wgb-btn-create-room" onClick={handleCreatePrivateRoom}>
+                  <span>➕</span> Create Room ({playerCount}P)
+                </button>
 
-          {/* Join Existing Room Section */}
-          <div className="wgb-join-room-card">
-            <div className="wgb-join-room-info">
-              <div className="wgb-join-icon">🚪</div>
-              <div>
-                <h3 className="wgb-join-title">Join Existing Room</h3>
-                <p className="wgb-join-desc">
-                  Have a room code or invite from a friend? Enter it below to join the match.
-                </p>
+                <div className="wgb-card-divider">
+                  <span>OR JOIN BY CODE</span>
+                </div>
+
+                <form
+                  className="wgb-card-join-form"
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    handleJoinByCode(joinCodeInput);
+                  }}
+                >
+                  <div className="wgb-card-input-wrap">
+                    <span className="wgb-card-input-icon">🔑</span>
+                    <input
+                      type="text"
+                      className="wgb-card-join-input"
+                      placeholder="e.g. WGB-ABCD"
+                      value={joinCodeInput}
+                      onChange={(e) => setJoinCodeInput(e.target.value.toUpperCase())}
+                      maxLength={16}
+                      disabled={isJoining}
+                      aria-label="Room Code"
+                    />
+                  </div>
+                  <button
+                    type="submit"
+                    className="wgb-btn-secondary wgb-btn-join-room"
+                    disabled={isJoining || !joinCodeInput.trim()}
+                  >
+                    <span>🚪</span> {isJoining ? 'Joining...' : 'Join Room'}
+                  </button>
+                </form>
               </div>
             </div>
-            <form
-              className="wgb-join-form"
-              onSubmit={(e) => {
-                e.preventDefault();
-                handleJoinByCode(joinCodeInput);
-              }}
-            >
-              <input
-                type="text"
-                className="wgb-join-input"
-                placeholder="e.g. WGB-ABCD"
-                value={joinCodeInput}
-                onChange={(e) => setJoinCodeInput(e.target.value.toUpperCase())}
-                maxLength={16}
-                disabled={isJoining}
-                aria-label="Room Code"
-              />
-              <button
-                type="submit"
-                className="wgb-join-submit-btn"
-                disabled={isJoining || !joinCodeInput.trim()}
-              >
-                <span>🚪</span> {isJoining ? 'Joining...' : 'Join Room'}
-              </button>
-            </form>
           </div>
         </main>
       )}
 
-      {/* Private Room Modal */}
+      {/* Private Room Waiting Modal */}
       {isRoomModalOpen && (
         <div className="wgb-modal-overlay">
           <div className="wgb-modal-box">
             <button className="wgb-modal-close" onClick={() => setIsRoomModalOpen(false)}>
               ✕
             </button>
-            <div className="wgb-lobby-badge">Private Arena Room</div>
-            <h2 style={{ margin: '0.5rem 0', color: '#fff' }}>Invite Your Opponents</h2>
+            <div className="wgb-lobby-badge">
+              {isHost ? 'Private Room (Host)' : 'Waiting Room (Guest)'}
+            </div>
+            <h2 style={{ margin: '0.5rem 0', color: '#fff' }}>
+              {isHost ? 'Invite Your Opponents' : `Room ${roomCode}`}
+            </h2>
             <p style={{ color: 'var(--wgb-text-muted)', fontSize: '0.9rem' }}>
-              Share this room code or link with friends to fill all {playerCount} player slots:
+              {isHost
+                ? `Share this room code or link with friends to fill all ${playerCount} player slots:`
+                : 'Waiting for the host to start the match. Mark yourself as ready below!'}
             </p>
 
             <div className="wgb-room-code-display">
@@ -1088,12 +1311,20 @@ export const WordGridLobby = () => {
               </button>
             </div>
 
-            {/* Multiplayer Guard Notice Banner */}
-            {ALL_SLOTS.filter((s) => slotStates[s] === 'ACTIVE').length < 2 && (
+            {/* Multiplayer Guard Notice Banner for Host */}
+            {isHost && ALL_SLOTS.filter((s) => slotStates[s] === 'ACTIVE').length < 2 && (
               <div className="wgb-room-warning-banner">
                 ⚠️ Only you are active in this room. Share your room code above to let friends join before starting!
               </div>
             )}
+
+            {isHost &&
+              ALL_SLOTS.filter((s) => slotStates[s] === 'ACTIVE').length >= 2 &&
+              !ALL_SLOTS.filter((s) => s !== 'P1' && slotStates[s] === 'ACTIVE').every((s) => Boolean(readyStates[s])) && (
+                <div className="wgb-room-warning-banner waiting">
+                  ⏳ Waiting for all joined players to mark themselves as Ready...
+                </div>
+              )}
 
             {/* Live Slot Status Cards */}
             <div className="wgb-slots-grid">
@@ -1102,16 +1333,21 @@ export const WordGridLobby = () => {
                 const state = slotStates[slot];
                 const isInactive = state === 'INACTIVE_SETUP';
                 const isWaiting = state === 'WAITING';
+                const isActive = state === 'ACTIVE';
+                const isMe = slot === mySlot;
+                const isSlotReady = slot === 'P1' ? true : Boolean(readyStates[slot]);
                 const name = isInactive
                   ? 'No Player'
                   : isWaiting
-                    ? 'Waiting...'
+                    ? 'Waiting for player...'
                     : playerNames[slot] || meta.label;
 
                 return (
                   <div
                     key={slot}
-                    className={`wgb-slot-card slot-${slot.toLowerCase()} ${isInactive ? 'inactive-setup' : ''}`}
+                    className={`wgb-slot-card slot-${slot.toLowerCase()} ${
+                      isInactive ? 'inactive-setup' : ''
+                    } ${isMe ? 'is-me' : ''}`}
                   >
                     {isInactive && (
                       <div className="wgb-inactive-overlay">
@@ -1121,24 +1357,92 @@ export const WordGridLobby = () => {
                     )}
                     <div className="wgb-slot-avatar">{meta.avatar}</div>
                     <div className="wgb-slot-info">
-                      <div className="wgb-slot-player-name">{name}</div>
-                      <div className="wgb-slot-tag">
-                        {meta.label} • {state || 'READY'}
+                      <div className="wgb-slot-player-name">
+                        {name} {isMe ? <span className="wgb-me-tag">(You)</span> : null}
                       </div>
+                      <div className="wgb-slot-tag">
+                        {slot === 'P1' ? (
+                          <span className="wgb-host-badge">👑 Host • 🟢 Ready</span>
+                        ) : isActive ? (
+                          isSlotReady ? (
+                            <span className="wgb-ready-badge ready">🟢 Ready</span>
+                          ) : (
+                            <span className="wgb-ready-badge unready">⏳ Not Ready</span>
+                          )
+                        ) : (
+                          <span>{meta.label} • {state || 'WAITING'}</span>
+                        )}
+                      </div>
+
+                      {/* Guest sees their slot with a "Ready" toggle button: [ 🟢 I'm Ready / ⏳ Mark as Ready ] */}
+                      {!isHost && isMe && isActive && (
+                        <div className="wgb-slot-ready-action">
+                          <button
+                            type="button"
+                            className={`wgb-ready-toggle-btn ${readyStates[slot] ? 'is-ready' : 'not-ready'}`}
+                            onClick={handleToggleReady}
+                          >
+                            {readyStates[slot] ? "🟢 I'm Ready" : "⏳ Mark as Ready"}
+                          </button>
+                        </div>
+                      )}
                     </div>
                   </div>
                 );
               })}
             </div>
 
-            <div style={{ display: 'flex', gap: '0.75rem' }}>
-              <button className="wgb-btn-primary" onClick={handleStartPrivateMatchNow}>
-                🚀 Start Game Now
-              </button>
-              <button className="wgb-btn-outline" onClick={() => setIsRoomModalOpen(false)}>
-                Cancel
-              </button>
-            </div>
+            {/* Modal Controls: Host vs Guest */}
+            {isHost ? (
+              <div className="wgb-modal-host-footer">
+                {(() => {
+                  const activeSlots = ALL_SLOTS.filter((s) => slotStates[s] === 'ACTIVE');
+                  const activeCount = activeSlots.length;
+                  const guestSlots = ALL_SLOTS.filter((s) => s !== 'P1' && slotStates[s] === 'ACTIVE');
+                  const allGuestsReady = guestSlots.length > 0 && guestSlots.every((s) => Boolean(readyStates[s]));
+                  const canHostStart = activeCount >= 2 && allGuestsReady;
+
+                  let buttonMessage = '🚀 Start Game Now';
+                  if (activeCount < 2) {
+                    buttonMessage = 'Waiting for players to join...';
+                  } else if (!allGuestsReady) {
+                    buttonMessage = 'Waiting for all players to be Ready...';
+                  }
+
+                  return (
+                    <button
+                      className={`wgb-btn-primary ${!canHostStart ? 'disabled' : 'wgb-btn-pulse'}`}
+                      disabled={!canHostStart}
+                      onClick={handleHostStartGame}
+                      title={buttonMessage}
+                    >
+                      {canHostStart ? '🚀 Start Game Now' : `⏳ ${buttonMessage}`}
+                    </button>
+                  );
+                })()}
+                <button className="wgb-btn-outline" onClick={() => setIsRoomModalOpen(false)}>
+                  Cancel
+                </button>
+              </div>
+            ) : (
+              <div className="wgb-modal-guest-footer">
+                <button
+                  type="button"
+                  className={`wgb-ready-toggle-btn-lg ${readyStates[mySlot] ? 'is-ready' : 'not-ready'}`}
+                  onClick={handleToggleReady}
+                >
+                  {readyStates[mySlot] ? "🟢 I'm Ready (Click to Unready)" : "⏳ Mark as Ready"}
+                </button>
+                <div className="wgb-guest-waiting-msg">
+                  {readyStates[mySlot]
+                    ? '✨ You are ready! Waiting for host to start the game...'
+                    : '👉 Click "Mark as Ready" to signal the host you are ready to play!'}
+                </div>
+                <button className="wgb-btn-outline" onClick={() => setIsRoomModalOpen(false)}>
+                  Leave Room
+                </button>
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -1364,7 +1668,7 @@ export const WordGridLobby = () => {
             </div>
 
             <div style={{ display: 'flex', gap: '0.75rem' }}>
-              <button className="wgb-btn-primary" onClick={handleStartSoloAI}>
+              <button className="wgb-btn-primary" onClick={handlePlayAgain}>
                 🔄 Play Again
               </button>
               <button className="wgb-btn-outline" onClick={handleBackToLobby}>

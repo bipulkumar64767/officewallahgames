@@ -60,6 +60,33 @@ export class TicTacToeSocketManager {
     return true;
   }
 
+  sendRoomEvent(sessionId, event) {
+    if (!this.client || !this.isConnected) {
+      return false;
+    }
+    this.client.publish({
+      destination: `/topic/game/${sessionId}`,
+      body: JSON.stringify(event),
+    });
+    return true;
+  }
+
+  sendPlayerReady(sessionId, playerId, symbol, isReady) {
+    return this.sendRoomEvent(sessionId, {
+      type: 'PLAYER_READY',
+      playerId,
+      symbol,
+      isReady,
+    });
+  }
+
+  sendStartMatch(sessionId) {
+    return this.sendRoomEvent(sessionId, {
+      type: 'START_MATCH',
+      timestamp: Date.now(),
+    });
+  }
+
   requestRematch(sessionId, playerId, symbol) {
     if (!this.client || !this.isConnected) {
       return false;

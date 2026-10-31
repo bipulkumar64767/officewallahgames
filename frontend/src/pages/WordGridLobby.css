@@ -146,10 +146,10 @@
 /* Lobby Action Cards */
 .wgb-lobby-actions {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-  gap: 1.25rem;
-  max-width: 900px;
-  margin: 0 auto 2rem;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 1.5rem;
+  max-width: 860px;
+  margin: 0 auto 2.5rem;
 }
 
 .wgb-action-card {
@@ -164,6 +164,7 @@
   display: flex;
   flex-direction: column;
   justify-content: space-between;
+  min-height: 290px;
 }
 
 .wgb-action-card:hover {
@@ -183,11 +184,11 @@
 
 .wgb-action-icon {
   font-size: 2.2rem;
-  margin-bottom: 1rem;
+  margin-bottom: 0.75rem;
 }
 
 .wgb-action-title {
-  font-size: 1.3rem;
+  font-size: 1.35rem;
   font-weight: 700;
   margin: 0 0 0.4rem;
   color: #fff;
@@ -197,8 +198,224 @@
   color: var(--wgb-text-muted);
   font-size: 0.9rem;
   line-height: 1.5;
-  margin-bottom: 1.5rem;
+  margin-bottom: 1.25rem;
   flex-grow: 1;
+}
+
+/* Quick Match Card */
+.wgb-quick-match-card {
+  display: flex;
+  flex-direction: column;
+}
+
+.wgb-quick-match-idle {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-top: auto;
+}
+
+.wgb-quick-match-hint {
+  font-size: 0.8rem;
+  color: var(--wgb-text-muted);
+  text-align: center;
+}
+
+/* Quick Match Search Radar */
+.wgb-search-in-progress {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.65rem;
+  padding: 0.75rem 0;
+  margin-top: auto;
+  text-align: center;
+}
+
+.wgb-search-radar {
+  position: relative;
+  width: 60px;
+  height: 60px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 0.25rem;
+}
+
+.wgb-radar-ring {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  border: 2px solid rgba(0, 201, 167, 0.6);
+  animation: wgbRadarPulse 2s infinite cubic-bezier(0.215, 0.61, 0.355, 1);
+}
+
+.wgb-radar-ring.ring-1 {
+  animation-delay: 0s;
+}
+
+.wgb-radar-ring.ring-2 {
+  animation-delay: 0.65s;
+}
+
+.wgb-radar-ring.ring-3 {
+  animation-delay: 1.3s;
+}
+
+@keyframes wgbRadarPulse {
+  0% {
+    transform: scale(0.3);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(1.6);
+    opacity: 0;
+  }
+}
+
+.wgb-radar-icon {
+  font-size: 1.7rem;
+  position: relative;
+  z-index: 2;
+  animation: wgbPulseIcon 1.5s infinite ease-in-out;
+}
+
+@keyframes wgbPulseIcon {
+  0%, 100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.15);
+  }
+}
+
+.wgb-search-status-title {
+  font-weight: 700;
+  font-size: 1.05rem;
+  color: #fff;
+}
+
+.wgb-search-countdown-badge {
+  font-family: monospace;
+  font-size: 1.35rem;
+  font-weight: 800;
+  color: #00c9a7;
+  background: rgba(0, 201, 167, 0.15);
+  border: 1px solid rgba(0, 201, 167, 0.4);
+  padding: 0.3rem 1.1rem;
+  border-radius: 20px;
+  box-shadow: 0 0 15px rgba(0, 201, 167, 0.2);
+}
+
+.wgb-search-status-sub {
+  font-size: 0.82rem;
+  color: var(--wgb-text-muted);
+  margin: 0;
+}
+
+.wgb-btn-cancel-search {
+  padding: 0.45rem 1rem;
+  border-radius: 8px;
+  background: rgba(233, 69, 96, 0.15);
+  border: 1px solid rgba(233, 69, 96, 0.4);
+  color: #ff6b81;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  margin-top: 0.35rem;
+}
+
+.wgb-btn-cancel-search:hover {
+  background: rgba(233, 69, 96, 0.3);
+  color: #fff;
+}
+
+/* Private Room Card Layout */
+.wgb-private-room-card {
+  display: flex;
+  flex-direction: column;
+}
+
+.wgb-private-card-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  margin-top: auto;
+}
+
+.wgb-card-divider {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin: 0.15rem 0;
+  color: var(--wgb-text-muted);
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 1px;
+}
+
+.wgb-card-divider::before,
+.wgb-card-divider::after {
+  content: '';
+  flex: 1;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.wgb-card-join-form {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.wgb-card-input-wrap {
+  position: relative;
+  flex: 1;
+  display: flex;
+  align-items: center;
+}
+
+.wgb-card-input-icon {
+  position: absolute;
+  left: 0.75rem;
+  font-size: 0.9rem;
+  pointer-events: none;
+}
+
+.wgb-card-join-input {
+  width: 100%;
+  background: rgba(10, 11, 20, 0.85);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 10px;
+  padding: 0.7rem 0.75rem 0.7rem 2.2rem;
+  color: #00c9a7;
+  font-family: monospace;
+  font-size: 0.95rem;
+  font-weight: 700;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  transition: all 0.2s ease;
+}
+
+.wgb-card-join-input:focus {
+  outline: none;
+  border-color: #00c9a7;
+  box-shadow: 0 0 12px rgba(0, 201, 167, 0.35);
+}
+
+.wgb-card-join-input::placeholder {
+  color: rgba(148, 163, 184, 0.5);
+  font-weight: 500;
+  letter-spacing: 0;
+  text-transform: none;
+  font-family: inherit;
+  font-size: 0.85rem;
+}
+
+.wgb-btn-join-room {
+  padding: 0.7rem 1.1rem;
+  white-space: nowrap;
+  font-size: 0.9rem;
 }
 
 .wgb-btn-primary {
@@ -630,6 +847,163 @@
 .wgb-inactive-overlay-x {
   font-size: 1.15rem;
   line-height: 1;
+}
+
+/* Modal Warning Banner: Waiting State */
+.wgb-room-warning-banner.waiting {
+  background: rgba(0, 201, 167, 0.12);
+  border-color: rgba(0, 201, 167, 0.4);
+  color: #00c9a7;
+  box-shadow: 0 0 15px rgba(0, 201, 167, 0.15);
+}
+
+/* Slot Card - Active Player & Self Badge */
+.wgb-slot-card.is-me {
+  box-shadow: 0 0 15px rgba(0, 201, 167, 0.2);
+  border-color: rgba(0, 201, 167, 0.5);
+}
+
+.wgb-me-tag {
+  color: #00c9a7;
+  font-size: 0.75rem;
+  font-weight: 700;
+  margin-left: 0.35rem;
+}
+
+.wgb-ready-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  font-weight: 700;
+  font-size: 0.75rem;
+  padding: 0.2rem 0.5rem;
+  border-radius: 6px;
+}
+
+.wgb-ready-badge.ready {
+  background: rgba(0, 201, 167, 0.15);
+  color: #00c9a7;
+}
+
+.wgb-ready-badge.unready {
+  background: rgba(247, 183, 49, 0.15);
+  color: #f7b731;
+}
+
+.wgb-host-badge {
+  color: #f7b731;
+  font-weight: 700;
+}
+
+.wgb-slot-ready-action {
+  margin-top: 0.45rem;
+}
+
+.wgb-ready-toggle-btn {
+  padding: 0.35rem 0.75rem;
+  border-radius: 8px;
+  font-size: 0.78rem;
+  font-weight: 700;
+  cursor: pointer;
+  border: 1px solid transparent;
+  transition: all 0.2s ease;
+  width: 100%;
+}
+
+.wgb-ready-toggle-btn.is-ready {
+  background: rgba(0, 201, 167, 0.2);
+  color: #00c9a7;
+  border-color: rgba(0, 201, 167, 0.5);
+}
+
+.wgb-ready-toggle-btn.is-ready:hover {
+  background: rgba(0, 201, 167, 0.3);
+}
+
+.wgb-ready-toggle-btn.not-ready {
+  background: rgba(247, 183, 49, 0.2);
+  color: #f7b731;
+  border-color: rgba(247, 183, 49, 0.5);
+}
+
+.wgb-ready-toggle-btn.not-ready:hover {
+  background: rgba(247, 183, 49, 0.3);
+}
+
+/* Modal Host & Guest Footers */
+.wgb-modal-host-footer,
+.wgb-modal-guest-footer {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  width: 100%;
+}
+
+.wgb-ready-toggle-btn-lg {
+  width: 100%;
+  padding: 0.85rem 1.5rem;
+  border-radius: 12px;
+  font-size: 1rem;
+  font-weight: 800;
+  cursor: pointer;
+  border: none;
+  transition: all 0.2s ease;
+}
+
+.wgb-ready-toggle-btn-lg.is-ready {
+  background: linear-gradient(135deg, #00c9a7, #008f75);
+  color: #0d0e1a;
+  box-shadow: 0 4px 15px rgba(0, 201, 167, 0.4);
+}
+
+.wgb-ready-toggle-btn-lg.is-ready:hover {
+  background: linear-gradient(135deg, #1be4c0, #00c9a7);
+  transform: translateY(-2px);
+}
+
+.wgb-ready-toggle-btn-lg.not-ready {
+  background: linear-gradient(135deg, #f7b731, #d69818);
+  color: #0d0e1a;
+  box-shadow: 0 4px 15px rgba(247, 183, 49, 0.4);
+}
+
+.wgb-ready-toggle-btn-lg.not-ready:hover {
+  background: linear-gradient(135deg, #ffc54d, #f7b731);
+  transform: translateY(-2px);
+}
+
+.wgb-guest-waiting-msg {
+  font-size: 0.85rem;
+  color: var(--wgb-text-muted);
+  text-align: center;
+  margin: 0.2rem 0;
+}
+
+.wgb-btn-primary.disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  background: #252844;
+  color: var(--wgb-text-muted);
+  box-shadow: none;
+}
+
+.wgb-btn-primary.disabled:hover {
+  transform: none;
+  box-shadow: none;
+  background: #252844;
+}
+
+.wgb-btn-pulse {
+  animation: wgbButtonPulse 2s infinite ease-in-out;
+}
+
+@keyframes wgbButtonPulse {
+  0%, 100% {
+    box-shadow: 0 4px 15px rgba(233, 69, 96, 0.4);
+  }
+  50% {
+    box-shadow: 0 4px 25px rgba(233, 69, 96, 0.85);
+  }
 }
 
 /* Arena View */

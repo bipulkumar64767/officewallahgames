@@ -19,6 +19,17 @@ import './ConnectDropLobby.css';
 
 const TURN_TIME_LIMIT = 20;
 
+const REALISTIC_BOT_NAMES = [
+  'Aarav_Sharma',
+  'Vikram_R',
+  'Sneha_Patel',
+  'CyberNinja99',
+  'Rohan_Verma',
+  'Priya_K',
+  'Aditya_M',
+  'Neha_Singh',
+];
+
 const playTone = (freq, duration, type = 'sine') => {
   try {
     const AudioCtx = window.AudioContext || window.webkitAudioContext;
@@ -45,7 +56,7 @@ const ConnectDropLobby = () => {
 
   // Navigation / Views: 'LOBBY' | 'WAITING_ROOM' | 'PLAYING'
   const [view, setView] = useState('LOBBY');
-  const [gameMode, setGameMode] = useState('VS_AI'); // 'VS_AI' | 'QUICK_MATCH' | 'PRIVATE'
+  const [gameMode, setGameMode] = useState('QUICK_MATCH'); // 'QUICK_MATCH' | 'PRIVATE'
 
   // Room & Identity
   const [roomCode, setRoomCode] = useState('');
@@ -58,6 +69,17 @@ const ConnectDropLobby = () => {
   const [playerYellowName, setPlayerYellowName] = useState('Player 2');
   const [isAiOpponent, setIsAiOpponent] = useState(false);
   const [scores, setScores] = useState({ RED: 0, YELLOW: 0 });
+
+  // Waiting Room & Roles
+  const [isHost, setIsHost] = useState(false);
+  const [isReady, setIsReady] = useState(false); // Used by guest (or player)
+  const [opponentReady, setOpponentReady] = useState(false);
+  const [opponentJoined, setOpponentJoined] = useState(false);
+
+  // Quick Match Matchmaking State
+  const [isSearchingMatch, setIsSearchingMatch] = useState(false);
+  const [matchmakingTimer, setMatchmakingTimer] = useState(12);
+  const matchmakingIntervalRef = useRef(null);
 
   // Board state (6 rows x 7 cols)
   const [grid, setGrid] = useState(createEmptyGrid);
@@ -85,6 +107,7 @@ const ConnectDropLobby = () => {
   const myColorRef = useRef(myColor);
   const gameModeRef = useRef(gameMode);
   const sessionIdRef = useRef(sessionId);
+  const isHostRef = useRef(isHost);
 
   useEffect(() => {
     gridRef.current = grid;
@@ -93,7 +116,8 @@ const ConnectDropLobby = () => {
     myColorRef.current = myColor;
     gameModeRef.current = gameMode;
     sessionIdRef.current = sessionId;
-  }, [grid, currentTurn, isGameOver, myColor, gameMode, sessionId]);
+    isHostRef.current = isHost;
+  }, [grid, currentTurn, isGameOver, myColor, gameMode, sessionId, isHost]);
 
   const [localGuestId] = useState(
     () => 'GUEST_' + Math.floor(1000 + Math.random() * 9000)
@@ -203,14 +227,14 @@ const ConnectDropLobby = () => {
   // AI Move Scheduler
   const scheduleAiMove = useCallback(
     (activeGrid, aiColor) => {
-      setStatusMessage('🤖 Cyber AI is calculating optimal drop...');
+      setStatusMessage('🤖 Duelist is calculating optimal drop...');
       setTimeout(() => {
         if (isGameOverRef.current) return;
         const bestCol = computeBestConnectDropMove(activeGrid, aiColor);
         if (bestCol !== -1) {
           executeDrop(bestCol, aiColor);
         }
-      }, 650);
+      }, 700);
     },
     [executeDrop]
   );
@@ -229,15 +253,15 @@ const ConnectDropLobby = () => {
       return;
     }
 
-    // If online multiplayer, publish through WebSocket
-    if (gameMode !== 'VS_AI' && sessionId) {
+    // If online multiplayer without local AI opponent, publish through WebSocket
+    if (!isAiOpponent && sessionId) {
       connectdropSocket.dropDisc(sessionId, playerId, col);
     }
 
     // Always perform the drop locally for responsive immediate action
     const success = executeDrop(col, myColor);
 
-    // If Solo AI is playing, schedule AI reply
+    // If AI opponent is playing, schedule AI reply
     if (success && isAiOpponent) {
       const nextGrid = grid.map((r) => [...r]);
       nextGrid[targetRow][col] = myColor;
@@ -288,49 +312,107 @@ const ConnectDropLobby = () => {
     setTurnTimer(TURN_TIME_LIMIT);
     setStatusMessage('New match initialized! RED drops first.');
 
-    if (gameMode !== 'VS_AI' && sessionId) {
+    if (!isAiOpponent && sessionId) {
       connectdropSocket.requestRematch(sessionId, playerId);
     }
 
     if (isAiOpponent && myColor === 'YELLOW') {
       scheduleAiMove(empty, 'RED');
     }
-  }, [gameMode, sessionId, playerId, isAiOpponent, myColor, scheduleAiMove]);
+  }, [isAiOpponent, sessionId, playerId, myColor, scheduleAiMove]);
 
   // WebSocket Message Dispatcher
   const handleSocketMessage = useCallback(
     (payload) => {
       if (!payload) return;
 
-      // Player joined / match active
-      if (payload.type === 'PLAYER_JOINED' || payload.status === 'ACTIVE') {
-        if (payload.playerYellowName) setPlayerYellowName(payload.playerYellowName);
-        if (payload.playerRedName) setPlayerRedName(payload.playerRedName);
+      // 1. START MATCH event -> both players transition to PLAYING immediately
+      if (payload.type === 'START_MATCH') {
         setView('PLAYING');
         setTurnTimer(TURN_TIME_LIMIT);
-        setStatusMessage('Challenger connected! RED begins the duel.');
-        showToast('Challenger joined the arena!', 'success');
-      } else if (payload.type === 'DISC_DROPPED' || payload.column !== undefined) {
-        // Opponent drop
+        setStatusMessage('Match started! RED drops first.');
+        showToast('🚀 Match started! Let the duel begin!', 'success');
+        return;
+      }
+
+      // 2. PLAYER JOINED event
+      if (payload.type === 'PLAYER_JOINED') {
+        const guestName = payload.playerName || payload.playerYellowName || 'Challenger';
+        setPlayerYellowName(guestName);
+        setOpponentJoined(true);
+        showToast(`Challenger ${guestName} joined the room!`, 'info');
+
+        // If host, ack back so guest gets host's latest display name
+        if (isHostRef.current && sessionIdRef.current) {
+          connectdropSocket.sendRoomEvent(sessionIdRef.current, {
+            type: 'HOST_ACK',
+            playerRedName: playerName,
+          });
+        }
+        return;
+      }
+
+      // 3. HOST ACK event (guest receives host name confirmation)
+      if (payload.type === 'HOST_ACK') {
+        if (payload.playerRedName) {
+          setPlayerRedName(payload.playerRedName);
+        }
+        setOpponentJoined(true);
+        return;
+      }
+
+      // 4. PLAYER READY event
+      if (payload.type === 'PLAYER_READY') {
+        if (payload.playerId !== playerId) {
+          const readyState = Boolean(payload.isReady);
+          setOpponentReady(readyState);
+          if (readyState) {
+            showToast('Opponent is READY to play!', 'success');
+          } else {
+            showToast('Opponent is no longer ready.', 'info');
+          }
+        }
+        return;
+      }
+
+      // 5. DISC DROPPED event (Opponent move)
+      if (payload.type === 'DISC_DROPPED' || payload.column !== undefined) {
         const { column, color, playerId: eventPlayerId } = payload;
         if (eventPlayerId !== playerId && column !== undefined) {
           executeDrop(column, color || (myColorRef.current === 'RED' ? 'YELLOW' : 'RED'));
         }
-      } else if (payload.type === 'REMATCH_REQUESTED' || payload.type === 'RESTART_GAME') {
+        return;
+      }
+
+      // 6. REMATCH event
+      if (payload.type === 'REMATCH_REQUESTED' || payload.type === 'RESTART_GAME') {
         restartGame();
         showToast('Rematch accepted! New round started.', 'info');
       }
     },
-    [playerId, executeDrop, restartGame, showToast]
+    [playerId, playerName, executeDrop, restartGame, showToast]
   );
 
-  // Setup Solo AI Match
-  const startSoloAi = () => {
-    setGameMode('VS_AI');
+  // Pair with realistic bot and smoothly start duel
+  const pairWithRealisticBotAndStart = useCallback(() => {
+    if (matchmakingIntervalRef.current) {
+      clearInterval(matchmakingIntervalRef.current);
+      matchmakingIntervalRef.current = null;
+    }
+    setIsSearchingMatch(false);
+    setLoading(false);
+
+    const randomBotName =
+      REALISTIC_BOT_NAMES[Math.floor(Math.random() * REALISTIC_BOT_NAMES.length)];
+
+    setGameMode('QUICK_MATCH');
     setIsAiOpponent(true);
-    setMyColor('RED');
+    setIsHost(false);
+    setRoomCode('QM-' + Math.floor(1000 + Math.random() * 9000));
+    setSessionId('QM_SESSION_' + Date.now());
+    setMyColor('RED'); // Local player drops first as RED
     setPlayerRedName(playerName || 'You');
-    setPlayerYellowName('Cyber AI');
+    setPlayerYellowName(randomBotName);
     setGrid(createEmptyGrid());
     setCurrentTurn('RED');
     setIsGameOver(false);
@@ -338,57 +420,99 @@ const ConnectDropLobby = () => {
     setWinningCells(null);
     setLastDroppedCell(null);
     setTurnTimer(TURN_TIME_LIMIT);
-    setStatusMessage('Solo AI duel active. You are RED (drops first). Good luck!');
     setView('PLAYING');
-  };
+    setStatusMessage(`Duelist Matched: ${randomBotName}! Your turn (RED) to drop.`);
+    showToast(`⚡ Matched with ${randomBotName}! Match started.`, 'success');
+  }, [playerName, showToast]);
 
-  // Setup Quick Match
-  const startQuickMatch = async () => {
-    setLoading(true);
-    setStatusMessage('Searching for active Cyber duelists in the matchmaking pool...');
-    try {
-      const match = await queueQuickMatch({ playerId, playerName });
-      setGameMode('QUICK_MATCH');
-      setIsAiOpponent(false);
-      setRoomCode(match.roomCode || 'CND-QUICK');
-      setSessionId(match.sessionId);
-      setMyColor(match.assignedColor || 'RED');
-      setPlayerRedName(match.playerRedName || 'Player Red');
-      setPlayerYellowName(match.playerYellowName || 'Player Yellow');
-      setGrid(createEmptyGrid());
-      setCurrentTurn('RED');
-      setIsGameOver(false);
-      setWinner(null);
-      setWinningCells(null);
-      setLastDroppedCell(null);
-      setTurnTimer(TURN_TIME_LIMIT);
-
-      // Connect WebSocket
-      connectdropSocket.connect(
-        match.sessionId,
-        handleSocketMessage,
-        (err) => console.warn('[ConnectDropWS] Connection note:', err.message)
-      );
-
-      setView('PLAYING');
-      setStatusMessage('Matched with online player! RED drops first.');
-      showToast('Quick match opponent found!', 'success');
-    } catch (err) {
-      console.warn('Quick Match failed:', err);
-      showToast('Could not reach quick match server. Starting smart AI duel instead.', 'warning');
-      startSoloAi();
-    } finally {
-      setLoading(false);
+  // Cancel Quick Match Search
+  const cancelQuickMatch = useCallback(() => {
+    if (matchmakingIntervalRef.current) {
+      clearInterval(matchmakingIntervalRef.current);
+      matchmakingIntervalRef.current = null;
     }
+    setIsSearchingMatch(false);
+    setMatchmakingTimer(12);
+    setLoading(false);
+    connectdropSocket.disconnect();
+    showToast('Matchmaking cancelled', 'info');
+  }, [showToast]);
+
+  // Setup Quick Match with 12s countdown matchmaking
+  const startQuickMatch = () => {
+    if (isSearchingMatch) return;
+    setIsSearchingMatch(true);
+    setMatchmakingTimer(12);
+
+    // Attempt to queue via real backend if available
+    queueQuickMatch({ playerId, playerName })
+      .then((match) => {
+        // If matched against a real human opponent
+        if (
+          match &&
+          !match.isOfflineFallback &&
+          match.playerYellow &&
+          match.playerYellow !== playerId &&
+          match.playerRed &&
+          match.playerRed !== playerId
+        ) {
+          if (matchmakingIntervalRef.current) {
+            clearInterval(matchmakingIntervalRef.current);
+            matchmakingIntervalRef.current = null;
+          }
+          setIsSearchingMatch(false);
+          setGameMode('QUICK_MATCH');
+          setIsAiOpponent(false);
+          setRoomCode(match.roomCode || 'CND-QUICK');
+          setSessionId(match.sessionId);
+          setMyColor(match.assignedColor || 'RED');
+          setPlayerRedName(match.playerRedName || 'Player Red');
+          setPlayerYellowName(match.playerYellowName || 'Player Yellow');
+          setGrid(createEmptyGrid());
+          setCurrentTurn('RED');
+          setIsGameOver(false);
+          setWinner(null);
+          setWinningCells(null);
+          setLastDroppedCell(null);
+          setTurnTimer(TURN_TIME_LIMIT);
+
+          connectdropSocket.connect(
+            match.sessionId,
+            handleSocketMessage,
+            (err) => console.warn('[ConnectDropWS] Connection note:', err.message)
+          );
+
+          setView('PLAYING');
+          setStatusMessage('Matched with online player! RED drops first.');
+          showToast('Quick match opponent found!', 'success');
+        }
+      })
+      .catch(() => {
+        // Fallback smooth handling handled by countdown
+      });
+
+    // 12s countdown timer
+    let timeLeft = 12;
+    matchmakingIntervalRef.current = setInterval(() => {
+      timeLeft -= 1;
+      setMatchmakingTimer(timeLeft);
+      if (timeLeft <= 0) {
+        pairWithRealisticBotAndStart();
+      }
+    }, 1000);
   };
 
-  // Create Private Room
+  // Create Private Room (HOST)
   const createPrivateRoom = async () => {
     setLoading(true);
     try {
       const room = await createConnectDropRoom({ playerId, playerName });
       setGameMode('PRIVATE');
       setIsAiOpponent(false);
+      setIsHost(true);
+      setIsReady(false);
+      setOpponentReady(false);
+      setOpponentJoined(false);
       setRoomCode(room.roomCode);
       setSessionId(room.sessionId);
       setMyColor('RED');
@@ -401,7 +525,7 @@ const ConnectDropLobby = () => {
       setWinningCells(null);
       setLastDroppedCell(null);
 
-      // Connect WebSocket and wait in waiting room
+      // Connect WebSocket and wait in WAITING_ROOM
       connectdropSocket.connect(
         room.sessionId,
         handleSocketMessage,
@@ -418,48 +542,94 @@ const ConnectDropLobby = () => {
     }
   };
 
-  // Join Private Room
-  const joinPrivateRoom = useCallback(async (codeToJoin) => {
-    const code = (codeToJoin || joinCodeInput).trim().toUpperCase();
-    if (!code) {
-      showToast('Please enter a valid room code (e.g. CND-A1B2)', 'warning');
+  // Join Private Room (GUEST)
+  const joinPrivateRoom = useCallback(
+    async (codeToJoin) => {
+      const code = (codeToJoin || joinCodeInput).trim().toUpperCase();
+      if (!code) {
+        showToast('Please enter a valid room code (e.g. CND-A1B2)', 'warning');
+        return;
+      }
+      setLoading(true);
+      try {
+        const room = await joinConnectDropRoom({ roomCode: code, playerId, playerName });
+        setGameMode('PRIVATE');
+        setIsAiOpponent(false);
+        setIsHost(false);
+        setIsReady(false);
+        setOpponentReady(false);
+        setOpponentJoined(true);
+        setRoomCode(room.roomCode || code);
+        setSessionId(room.sessionId);
+        setMyColor('YELLOW');
+        setPlayerRedName(room.playerRedName || 'Host Challenger');
+        setPlayerYellowName(playerName || 'Guest Player');
+        setGrid(createEmptyGrid());
+        setCurrentTurn('RED');
+        setIsGameOver(false);
+        setWinner(null);
+        setWinningCells(null);
+        setLastDroppedCell(null);
+        setTurnTimer(TURN_TIME_LIMIT);
+
+        // Connect WebSocket and stay in WAITING_ROOM!
+        connectdropSocket.connect({
+          sessionId: room.sessionId,
+          onEvent: handleSocketMessage,
+          onConnect: () => {
+            // Send PLAYER_JOINED on connection
+            connectdropSocket.sendRoomEvent(room.sessionId, {
+              type: 'PLAYER_JOINED',
+              color: 'YELLOW',
+              playerId,
+              playerName: playerName || 'Guest Player',
+            });
+          },
+          onError: (err) => console.warn('[ConnectDropWS] Guest connection note:', err.message),
+        });
+
+        // Backup event push in case socket connected synchronously
+        setTimeout(() => {
+          connectdropSocket.sendRoomEvent(room.sessionId, {
+            type: 'PLAYER_JOINED',
+            color: 'YELLOW',
+            playerId,
+            playerName: playerName || 'Guest Player',
+          });
+        }, 400);
+
+        // DO NOT setView('PLAYING')! Stay in WAITING_ROOM!
+        setView('WAITING_ROOM');
+        showToast(`Joined room ${code}! Mark as Ready to start.`, 'success');
+      } catch (err) {
+        console.warn('Join room error:', err);
+        showToast('Failed to join room. Verify code and try again.', 'warning');
+      } finally {
+        setLoading(false);
+      }
+    },
+    [joinCodeInput, playerId, playerName, handleSocketMessage, showToast]
+  );
+
+  // Guest toggles ready status
+  const handleToggleReady = () => {
+    const nextReady = !isReady;
+    setIsReady(nextReady);
+    connectdropSocket.sendPlayerReady(sessionId, playerId, myColor, nextReady);
+  };
+
+  // Host starts match when opponent is ready
+  const handleHostStartMatch = () => {
+    if (!opponentJoined || !opponentReady) {
+      showToast('Opponent must join and be ready before starting match!', 'warning');
       return;
     }
-    setLoading(true);
-    try {
-      const room = await joinConnectDropRoom({ roomCode: code, playerId, playerName });
-      setGameMode('PRIVATE');
-      setIsAiOpponent(false);
-      setRoomCode(room.roomCode || code);
-      setSessionId(room.sessionId);
-      setMyColor('YELLOW');
-      setPlayerRedName(room.playerRedName || 'Host Challenger');
-      setPlayerYellowName(playerName || 'Guest Player');
-      setGrid(createEmptyGrid());
-      setCurrentTurn('RED');
-      setIsGameOver(false);
-      setWinner(null);
-      setWinningCells(null);
-      setLastDroppedCell(null);
-      setTurnTimer(TURN_TIME_LIMIT);
-
-      // Connect WebSocket
-      connectdropSocket.connect(
-        room.sessionId,
-        handleSocketMessage,
-        (err) => console.warn('[ConnectDropWS] Guest connection note:', err.message)
-      );
-
-      setView('PLAYING');
-      setStatusMessage(`Joined Arena ${code}! Match is live. RED drops first.`);
-      showToast(`Joined room ${code}!`, 'success');
-    } catch (err) {
-      console.warn('Join room error:', err);
-      showToast('Failed to join room. Verify code and try again.', 'warning');
-    } finally {
-      setLoading(false);
-    }
-  }, [joinCodeInput, playerId, playerName, handleSocketMessage, showToast]);
+    connectdropSocket.sendStartMatch(sessionId);
+    setView('PLAYING');
+    setTurnTimer(TURN_TIME_LIMIT);
+    setStatusMessage('Match started! RED drops first.');
+    showToast('🚀 Match launched! Good luck!', 'success');
+  };
 
   // Auto-join from URL parameter
   useEffect(() => {
@@ -476,6 +646,9 @@ const ConnectDropLobby = () => {
   // Cleanup on unmount
   useEffect(() => {
     return () => {
+      if (matchmakingIntervalRef.current) {
+        clearInterval(matchmakingIntervalRef.current);
+      }
       connectdropSocket.disconnect();
     };
   }, []);
@@ -534,7 +707,7 @@ const ConnectDropLobby = () => {
       </nav>
 
       {/* ========================================================================= */}
-      {/* VIEW: LOBBY                                                               */}
+      {/* VIEW: LOBBY (Exactly 2 Cards: Quick Match & Private Room)                 */}
       {/* ========================================================================= */}
       {view === 'LOBBY' && (
         <div className="connectdrop-lobby-view">
@@ -561,154 +734,265 @@ const ConnectDropLobby = () => {
               </div>
               <div className="hero-stat">
                 <span className="stat-label">Match Mode</span>
-                <span className="stat-value">1v1 PvP / AI</span>
+                <span className="stat-value">1v1 Real-Time Duel</span>
               </div>
             </div>
           </header>
 
-          {/* Game Modes */}
-          <div className="modes-grid">
-            {/* Quick Match */}
-            <div className="mode-card primary-card">
+          {/* Game Modes: Exactly 2 Cards */}
+          <div className="modes-grid two-cards-grid">
+            {/* Card 1: ⚡ Quick Match */}
+            <div
+              className={`mode-card primary-card ${
+                isSearchingMatch ? 'card-searching-active' : ''
+              }`}
+            >
               <div className="mode-card-badge">INSTANT MATCH</div>
               <div className="mode-card-icon">⚡</div>
               <h3>Quick Match</h3>
-              <p>
-                Hop straight into the PvP matchmaking pool and challenge active online strategists
-                in lightning-fast rounds.
-              </p>
-              <button
-                className="btn-cyber btn-primary"
-                onClick={startQuickMatch}
-                disabled={loading}
-              >
-                {loading ? 'Connecting...' : '⚡ Find Quick Match'}
-              </button>
+
+              {!isSearchingMatch ? (
+                <>
+                  <p>
+                    Hop straight into the PvP matchmaking pool and challenge active online strategists
+                    in lightning-fast rounds.
+                  </p>
+                  <button
+                    className="btn-cyber btn-primary"
+                    onClick={startQuickMatch}
+                    disabled={loading}
+                  >
+                    ⚡ Find Quick Match
+                  </button>
+                </>
+              ) : (
+                <div className="quickmatch-searching-box">
+                  <div className="searching-radar-spinner" />
+                  <p className="searching-status-text">
+                    🔍 Searching for online duelist... ({matchmakingTimer}s)
+                  </p>
+                  <div className="searching-progress-bar">
+                    <div
+                      className="searching-progress-fill"
+                      style={{ width: `${((12 - matchmakingTimer) / 12) * 100}%` }}
+                    />
+                  </div>
+                  <button
+                    className="btn-cyber btn-outline cancel-search-btn"
+                    onClick={cancelQuickMatch}
+                  >
+                    ✕ Cancel Search
+                  </button>
+                </div>
+              )}
             </div>
 
-            {/* Play With Friends */}
-            <div className="mode-card highlight-card">
+            {/* Card 2: 🔗 Private Room Card */}
+            <div className="mode-card highlight-card private-room-card">
               <div className="mode-card-badge">PRIVATE ARENA</div>
               <div className="mode-card-icon">🔗</div>
-              <h3>Play with Friends</h3>
+              <h3>Private Room</h3>
               <p>
-                Generate a private duel code, send a one-click invite link to your colleague, and
-                settle office rivalries.
+                Create a private room with a shareable code, or enter a friend's room code to join
+                their arena directly.
               </p>
-              <button
-                className="btn-cyber btn-secondary"
-                onClick={createPrivateRoom}
-                disabled={loading}
-              >
-                {loading ? 'Creating...' : '🔗 Create Private Room'}
-              </button>
-            </div>
 
-            {/* Solo vs AI */}
-            <div className="mode-card ai-card">
-              <div className="mode-card-badge">OFFLINE READY</div>
-              <div className="mode-card-icon">🤖</div>
-              <h3>Solo vs AI</h3>
-              <p>
-                Sharpen your tactical vision against an intelligent AI opponent that calculates
-                blocks, fork setups, and lethal alignments.
-              </p>
-              <button
-                className="btn-cyber btn-accent"
-                onClick={startSoloAi}
-                disabled={loading}
-              >
-                🤖 Solo vs AI
-              </button>
+              <div className="private-room-actions">
+                <button
+                  className="btn-cyber btn-secondary create-room-btn"
+                  onClick={createPrivateRoom}
+                  disabled={loading || isSearchingMatch}
+                >
+                  {loading ? 'Creating...' : '➕ Create Room'}
+                </button>
+
+                <div className="private-room-divider">
+                  <span>OR JOIN BY CODE</span>
+                </div>
+
+                <div className="card-join-input-group">
+                  <input
+                    type="text"
+                    className="cyber-input card-cyber-input"
+                    placeholder="e.g. CND-7K9A"
+                    maxLength={10}
+                    value={joinCodeInput}
+                    onChange={(e) => setJoinCodeInput(e.target.value.toUpperCase())}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') joinPrivateRoom();
+                    }}
+                    disabled={loading || isSearchingMatch}
+                  />
+                  <button
+                    className="btn-cyber btn-primary card-join-btn"
+                    onClick={() => joinPrivateRoom()}
+                    disabled={loading || isSearchingMatch || !joinCodeInput.trim()}
+                  >
+                    🔑 Join Room
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
-
-          {/* Join Private Room Panel */}
-          <section className="join-panel">
-            <div className="join-panel-header">
-              <h3>Have an Arena Invite Code?</h3>
-              <p>Enter the 8-character duel code sent by your challenger:</p>
-            </div>
-            <div className="join-input-group">
-              <input
-                type="text"
-                className="cyber-input"
-                placeholder="e.g. CND-7K9A"
-                maxLength={10}
-                value={joinCodeInput}
-                onChange={(e) => setJoinCodeInput(e.target.value.toUpperCase())}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') joinPrivateRoom();
-                }}
-              />
-              <button
-                className="btn-cyber btn-primary join-btn"
-                onClick={() => joinPrivateRoom()}
-                disabled={loading || !joinCodeInput.trim()}
-              >
-                ⚔️ Join Arena
-              </button>
-            </div>
-          </section>
         </div>
       )}
 
       {/* ========================================================================= */}
-      {/* VIEW: WAITING ROOM                                                        */}
+      {/* VIEW: WAITING ROOM (Host & Guest Roles)                                   */}
       {/* ========================================================================= */}
       {view === 'WAITING_ROOM' && (
         <div className="waiting-room-card">
-          <div className="waiting-header">
-            <span className="radar-spinner" />
-            <h2>Private Arena Created</h2>
-            <p className="waiting-subtitle">
-              Share the arena room code or invite link with your challenger to begin.
-            </p>
-          </div>
+          {isHost ? (
+            /* HOST WAITING ROOM */
+            <div className="waiting-room-content">
+              <div className="waiting-header">
+                <span className="radar-spinner" />
+                <h2>Private Arena (Host)</h2>
+                <p className="waiting-subtitle">
+                  {opponentJoined
+                    ? 'Challenger has connected! Waiting for challenger to mark Ready.'
+                    : 'Share the arena room code or invite link with your challenger to begin.'}
+                </p>
+              </div>
 
-          <div className="room-code-display">
-            <span className="code-label">ARENA ROOM CODE</span>
-            <span className="code-value">{roomCode}</span>
-          </div>
+              <div className="room-code-display">
+                <span className="code-label">ARENA ROOM CODE</span>
+                <span className="code-value">{roomCode}</span>
+              </div>
 
-          <div className="share-link-box">
-            <input
-              type="text"
-              readOnly
-              value={`${window.location.origin}/games/connectdrop?room=${roomCode}`}
-              className="share-link-input"
-            />
-            <button className="btn-cyber btn-copy" onClick={copyShareLink}>
-              {copySuccess ? '✅ Copied!' : '📋 Copy Link'}
-            </button>
-          </div>
+              <div className="share-link-box">
+                <input
+                  type="text"
+                  readOnly
+                  value={`${window.location.origin}/games/connectdrop?room=${roomCode}`}
+                  className="share-link-input"
+                />
+                <button className="btn-cyber btn-copy" onClick={copyShareLink}>
+                  {copySuccess ? '✅ Copied!' : '📋 Copy Link'}
+                </button>
+              </div>
 
-          <div className="waiting-pulse-status">
-            <span className="pulse-indicator" />
-            <span>Waiting for Challenger to join the grid...</span>
-          </div>
+              {/* Roster & Ready Status */}
+              <div className="opponent-status-panel">
+                <div className="player-row">
+                  <span className="player-role-badge badge-host">🔴 HOST</span>
+                  <span className="player-display-name">{playerRedName} (You)</span>
+                  <span className="ready-indicator ready-green">🟢 READY</span>
+                </div>
 
-          <div className="waiting-actions">
-            <button
-              className="btn-cyber btn-outline"
-              onClick={() => {
-                connectdropSocket.disconnect();
-                setView('LOBBY');
-              }}
-            >
-              ⬅️ Cancel & Return to Lobby
-            </button>
-            <button
-              className="btn-cyber btn-accent"
-              onClick={() => {
-                // Allow host to start match in Solo AI mode if challenger is taking too long
-                startSoloAi();
-                showToast('Switched to Solo AI match', 'info');
-              }}
-            >
-              🤖 Play Solo vs AI While Waiting
-            </button>
-          </div>
+                <div className="player-row">
+                  <span className="player-role-badge badge-guest">🟡 GUEST</span>
+                  <span className="player-display-name">
+                    {opponentJoined ? playerYellowName : 'Waiting for challenger to join...'}
+                  </span>
+                  {opponentJoined ? (
+                    opponentReady ? (
+                      <span className="ready-indicator ready-green">🟢 READY</span>
+                    ) : (
+                      <span className="ready-indicator ready-amber">⏳ NOT READY</span>
+                    )
+                  ) : (
+                    <span className="ready-indicator ready-gray">⌛ WAITING...</span>
+                  )}
+                </div>
+              </div>
+
+              {/* Host Start Match Button */}
+              <div className="host-start-section">
+                <button
+                  className="btn-cyber btn-primary btn-start-match"
+                  onClick={handleHostStartMatch}
+                  disabled={!opponentJoined || !opponentReady}
+                >
+                  🚀 Start Match
+                </button>
+                {(!opponentJoined || !opponentReady) && (
+                  <p className="start-hint-text">
+                    {!opponentJoined
+                      ? 'Waiting for opponent to enter the room code...'
+                      : 'Opponent has joined! Waiting for opponent to mark Ready...'}
+                  </p>
+                )}
+              </div>
+
+              <div className="waiting-actions">
+                <button
+                  className="btn-cyber btn-outline"
+                  onClick={() => {
+                    connectdropSocket.disconnect();
+                    setView('LOBBY');
+                  }}
+                >
+                  ⬅️ Cancel & Return to Lobby
+                </button>
+              </div>
+            </div>
+          ) : (
+            /* GUEST WAITING ROOM */
+            <div className="waiting-room-content">
+              <div className="waiting-header">
+                <span className="radar-spinner spinner-guest" />
+                <h2>Private Arena (Guest)</h2>
+                <p className="waiting-subtitle">
+                  You joined Host <strong>{playerRedName}</strong>'s arena! Toggle Ready below
+                  when prepared.
+                </p>
+              </div>
+
+              <div className="room-code-display">
+                <span className="code-label">ARENA ROOM CODE</span>
+                <span className="code-value">{roomCode}</span>
+              </div>
+
+              {/* Roster & Status */}
+              <div className="opponent-status-panel">
+                <div className="player-row">
+                  <span className="player-role-badge badge-host">🔴 HOST</span>
+                  <span className="player-display-name">{playerRedName}</span>
+                  <span className="ready-indicator ready-green">👑 HOST</span>
+                </div>
+
+                <div className="player-row">
+                  <span className="player-role-badge badge-guest">🟡 GUEST</span>
+                  <span className="player-display-name">{playerYellowName} (You)</span>
+                  {isReady ? (
+                    <span className="ready-indicator ready-green">🟢 READY</span>
+                  ) : (
+                    <span className="ready-indicator ready-amber">⏳ NOT READY</span>
+                  )}
+                </div>
+              </div>
+
+              {/* Guest Ready Toggle Button */}
+              <div className="guest-ready-section">
+                <button
+                  className={`btn-cyber ready-toggle-btn ${
+                    isReady ? 'btn-ready-active' : 'btn-ready-inactive'
+                  }`}
+                  onClick={handleToggleReady}
+                >
+                  {isReady ? "🟢 I'm Ready" : "⏳ Mark as Ready"}
+                </button>
+                <p className="ready-hint-text">
+                  {isReady
+                    ? 'You are marked as READY! Waiting for Host to start match...'
+                    : 'Click button to signal you are ready to duel!'}
+                </p>
+              </div>
+
+              <div className="waiting-actions">
+                <button
+                  className="btn-cyber btn-outline"
+                  onClick={() => {
+                    connectdropSocket.disconnect();
+                    setView('LOBBY');
+                  }}
+                >
+                  ⬅️ Leave Arena & Return to Lobby
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       )}
 

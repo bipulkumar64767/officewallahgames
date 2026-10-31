@@ -13,9 +13,10 @@ export class ConnectDropSocketManager {
    * Connect to the Connect Drop WebSocket topic for a given session.
    * Supports both parameter styles:
    *   connect(sessionId, onEvent, onError)
+   *   connect(sessionId, onEvent, onConnect, onError)
    *   connect({ sessionId, onEvent, onConnect, onError })
    */
-  connect(param1, param2, param3) {
+  connect(param1, param2, param3, param4) {
     this.disconnect();
 
     let sessionId;
@@ -31,7 +32,12 @@ export class ConnectDropSocketManager {
     } else {
       sessionId = param1;
       onEvent = param2;
-      onError = param3;
+      if (typeof param3 === 'function' && typeof param4 === 'function') {
+        onConnect = param3;
+        onError = param4;
+      } else if (typeof param3 === 'function') {
+        onError = param3;
+      }
     }
 
     try {
@@ -72,6 +78,42 @@ export class ConnectDropSocketManager {
       console.warn('[ConnectDropWS] WebSocket activation failed:', err.message);
       if (onError) onError(err);
     }
+  }
+
+  /**
+   * Publish a room event to /topic/connectdrop/${sessionId}
+   */
+  sendRoomEvent(sessionId, event) {
+    if (!this.client || !this.isConnected) {
+      return false;
+    }
+    this.client.publish({
+      destination: `/topic/connectdrop/${sessionId}`,
+      body: JSON.stringify(event),
+    });
+    return true;
+  }
+
+  /**
+   * Publish PLAYER_READY room event
+   */
+  sendPlayerReady(sessionId, playerId, color, isReady) {
+    return this.sendRoomEvent(sessionId, {
+      type: 'PLAYER_READY',
+      playerId,
+      color,
+      isReady,
+    });
+  }
+
+  /**
+   * Publish START_MATCH room event
+   */
+  sendStartMatch(sessionId) {
+    return this.sendRoomEvent(sessionId, {
+      type: 'START_MATCH',
+      timestamp: Date.now(),
+    });
   }
 
   /**
