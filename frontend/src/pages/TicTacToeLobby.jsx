@@ -717,12 +717,6 @@ const TicTacToeLobby = () => {
               </div>
             </div>
           </div>
-
-          {statusMessage && (
-            <div className="status-toast" role="status">
-              {statusMessage}
-            </div>
-          )}
         </div>
       )}
 
@@ -1104,6 +1098,14 @@ const TicTacToeLobby = () => {
               </div>
             </div>
           )}
+        </div>
+      )}
+
+      {/* Floating Safe-Area Notification Toast */}
+      {statusMessage && (
+        <div className="tictactoe-floating-toast" role="status">
+          <span>📢</span>
+          <span>{statusMessage}</span>
         </div>
       )}
     </div>

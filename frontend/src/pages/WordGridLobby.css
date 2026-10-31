@@ -1237,26 +1237,27 @@
 .wgb-grid-board {
   display: grid;
   grid-template-columns: repeat(10, minmax(0, 1fr));
-  gap: 5px;
+  gap: clamp(2px, 0.8vw, 5px);
   width: 100%;
-  max-width: 540px;
+  max-width: min(94vw, calc(100vh - 250px), 520px);
   aspect-ratio: 1 / 1;
   background: #090a14;
-  padding: 8px;
+  padding: clamp(4px, 1.2vw, 8px);
   border-radius: 12px;
   border: 1px solid rgba(255, 255, 255, 0.08);
   user-select: none;
+  box-sizing: border-box;
 }
 
 .wgb-cell {
   background: #15172b;
   border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 6px;
+  border-radius: clamp(3px, 1vw, 6px);
   display: flex;
   align-items: center;
   justify-content: center;
   font-family: var(--mono);
-  font-size: 1.25rem;
+  font-size: clamp(0.75rem, 3.2vw, 1.25rem);
   font-weight: 800;
   color: #f8fafc;
   cursor: pointer;
@@ -1367,7 +1368,22 @@
 
 @media (max-width: 600px) {
   .wgb-picker-keys {
-    grid-template-columns: repeat(9, 1fr);
+    grid-template-columns: repeat(7, 1fr);
+    gap: 4px;
+  }
+  .wgb-scoreboard-list {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+    gap: 0.5rem;
+  }
+  .wgb-player-card {
+    padding: 0.5rem 0.65rem;
+  }
+  .wgb-grid-section {
+    padding: 0.65rem;
+  }
+  .wgb-container {
+    padding: 0.75rem 0.5rem 2rem;
   }
 }
 
@@ -1494,17 +1510,20 @@
   gap: 0.4rem;
 }
 
-/* Toast Notifications */
+/* Toast Notifications - Top Safe Floating (No Button Overlap) */
 .wgb-toast-container {
   position: fixed;
-  bottom: 2rem;
+  top: 16px;
+  bottom: auto;
   left: 50%;
   transform: translateX(-50%);
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
-  z-index: 2000;
+  z-index: 9999;
   pointer-events: none;
+  max-width: 90vw;
+  width: max-content;
 }
 
 .wgb-toast {
