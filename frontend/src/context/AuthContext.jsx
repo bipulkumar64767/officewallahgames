@@ -53,15 +53,39 @@ export const AuthProvider = ({ children }) => {
     return guestProfile;
   }, []);
 
+  const updateDisplayName = useCallback((name) => {
+    if (!name || !name.trim()) return;
+    setUser((prev) => {
+      const updated = { ...(prev || {}), displayName: name.trim() };
+      localStorage.setItem('owg_user', JSON.stringify(updated));
+      return updated;
+    });
+  }, []);
+
+  const register = useCallback(async (username, password, displayName) => {
+    const profile = {
+      userId: `USR_${Date.now().toString(36).toUpperCase()}`,
+      displayName: displayName?.trim() || username.trim(),
+      token: `auth-token-${Date.now()}`,
+      isGuest: false,
+    };
+    setUser(profile);
+    localStorage.setItem('owg_user', JSON.stringify(profile));
+    setIsLoginModalOpen(false);
+    return profile;
+  }, []);
+
   const value = useMemo(
     () => ({
       user,
       login,
+      register,
       logout,
+      updateDisplayName,
       isLoginModalOpen,
       setIsLoginModalOpen,
     }),
-    [user, login, logout, isLoginModalOpen]
+    [user, login, register, logout, updateDisplayName, isLoginModalOpen]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

@@ -28,14 +28,14 @@ const Navbar = () => {
             {user.isGuest ? (
               <>
                 <span className="user-identity guest" title={user.userId}>
-                  👤 {user.userId}
+                  👤 {user.displayName || user.userId}
                 </span>
                 <button
                   type="button"
                   className="auth-btn login-btn"
                   onClick={() => setIsLoginModalOpen(true)}
                 >
-                  Login
+                  Sign In / Register
                 </button>
               </>
             ) : (

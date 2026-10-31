@@ -1057,3 +1057,124 @@
     grid-template-columns: 1fr;
   }
 }
+
+/* ==========================================================================
+   Lobby Join with Room Code & Waiting Room Guard Alert Styles
+   ========================================================================== */
+
+.lobby-join-wrapper {
+  margin-top: 1.5rem;
+  padding-top: 1.25rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.lobby-join-box {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  align-items: center;
+  max-width: 480px;
+}
+
+.lobby-join-input-wrap {
+  position: relative;
+  flex: 1;
+  min-width: 220px;
+  display: flex;
+  align-items: center;
+}
+
+.lobby-join-icon {
+  position: absolute;
+  left: 0.9rem;
+  font-size: 1rem;
+  pointer-events: none;
+  opacity: 0.8;
+}
+
+.lobby-join-input {
+  width: 100%;
+  background: rgba(10, 14, 28, 0.75);
+  border: 1px solid rgba(0, 242, 254, 0.35);
+  border-radius: 12px;
+  padding: 0.85rem 1rem 0.85rem 2.5rem;
+  color: #00f2fe;
+  font-size: 0.95rem;
+  font-weight: 600;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  outline: none;
+  transition: all 0.25s ease;
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.4);
+}
+
+.lobby-join-input::placeholder {
+  color: rgba(148, 163, 184, 0.6);
+  font-size: 0.85rem;
+  font-weight: 500;
+  letter-spacing: 0.5px;
+  text-transform: none;
+}
+
+.lobby-join-input:focus {
+  border-color: #00f2fe;
+  box-shadow: 0 0 15px rgba(0, 242, 254, 0.3), inset 0 2px 4px rgba(0, 0, 0, 0.5);
+  background: rgba(15, 23, 42, 0.9);
+}
+
+.btn-join-room {
+  background: linear-gradient(135deg, rgba(0, 242, 254, 0.2) 0%, rgba(15, 52, 96, 0.8) 100%);
+  border: 1px solid #00f2fe;
+  color: #00f2fe;
+  padding: 0.85rem 1.6rem;
+  border-radius: 12px;
+  font-weight: 700;
+  font-size: 0.95rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  white-space: nowrap;
+  box-shadow: 0 4px 15px rgba(0, 242, 254, 0.2);
+  transition: all 0.2s ease;
+}
+
+.btn-join-room:hover {
+  background: linear-gradient(135deg, rgba(0, 242, 254, 0.35) 0%, rgba(15, 52, 96, 0.95) 100%);
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(0, 242, 254, 0.4);
+  color: #ffffff;
+}
+
+/* Waiting Room Prominent Alert Banner */
+.waiting-room-alert-banner {
+  background: linear-gradient(135deg, rgba(255, 170, 0, 0.16) 0%, rgba(233, 69, 96, 0.12) 100%);
+  border: 1px solid rgba(255, 170, 0, 0.5);
+  border-left: 4px solid #ffaa00;
+  box-shadow: 0 0 20px rgba(255, 170, 0, 0.15);
+  border-radius: 12px;
+  padding: 1rem 1.25rem;
+  margin-bottom: 1.5rem;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  animation: bannerNeonGlow 3s ease-in-out infinite alternate;
+}
+
+@keyframes bannerNeonGlow {
+  0% {
+    box-shadow: 0 0 10px rgba(255, 170, 0, 0.1);
+    border-color: rgba(255, 170, 0, 0.4);
+  }
+  100% {
+    box-shadow: 0 0 22px rgba(255, 170, 0, 0.3);
+    border-color: rgba(255, 170, 0, 0.75);
+  }
+}
+
+.waiting-alert-text {
+  color: #fef08a;
+  font-size: 0.92rem;
+  font-weight: 600;
+  line-height: 1.45;
+}

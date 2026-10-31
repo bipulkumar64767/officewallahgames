@@ -82,6 +82,8 @@ export const WordGridLobby = () => {
   const [isRoomModalOpen, setIsRoomModalOpen] = useState(false);
   const [roomCode, setRoomCode] = useState(() => (searchParams.get('room') || '').trim().toUpperCase());
   const [copiedLink, setCopiedLink] = useState(false);
+  const [joinCodeInput, setJoinCodeInput] = useState('');
+  const [isJoining, setIsJoining] = useState(false);
 
   // Session & Identity
   const [sessionId, setSessionId] = useState('');
@@ -672,8 +674,73 @@ export const WordGridLobby = () => {
     });
   };
 
+  // Action: Join Room by Room Code
+  const handleJoinByCode = async (codeToJoin) => {
+    const rawCode = (codeToJoin !== undefined ? codeToJoin : joinCodeInput) || '';
+    const code = rawCode.trim().toUpperCase();
+
+    if (!code) {
+      showToast('⚠️ Please enter a valid room code!', 'error');
+      return;
+    }
+
+    setIsJoining(true);
+    try {
+      const statusRes = await getWordGridRoomStatus(code);
+      if (statusRes && (statusRes.status === 'ABANDONED' || statusRes.status === 'CLOSED')) {
+        showToast(`⚠️ Room ${code} is inactive or closed.`, 'error');
+        setIsJoining(false);
+        return;
+      }
+
+      const playerId = user?.userId || `GUEST_${Math.floor(100000 + Math.random() * 900000)}`;
+      const playerName = user?.displayName || 'Player';
+
+      const joinRes = await joinWordGridRoom({ roomCode: code, playerId, playerName });
+      if (!joinRes) {
+        showToast('⚠️ Could not join room. Please check the code and try again.', 'error');
+        setIsJoining(false);
+        return;
+      }
+
+      setSessionId(joinRes.sessionId);
+      setRoomCode(joinRes.roomCode || code);
+      setMySlot(joinRes.assignedSlot || 'P2');
+      const updatedSlotStates = joinRes.slotStates || getSlotStatesForCount(joinRes.playerCount || 2);
+      setSlotStates(updatedSlotStates);
+      setPlayerCount(joinRes.playerCount || 2);
+      if (joinRes.playerNames) setPlayerNames(joinRes.playerNames);
+      setIsSoloAI(false);
+
+      wordgridSocket.connect(joinRes.sessionId, handleSocketEvent);
+
+      const activeCount = ALL_SLOTS.filter((s) => updatedSlotStates[s] === 'ACTIVE').length;
+      if (joinRes.status === 'ACTIVE' || activeCount >= 2) {
+        setView('ARENA');
+        setIsRoomModalOpen(false);
+      } else {
+        setIsRoomModalOpen(true);
+      }
+
+      showToast(`🎮 Joined room ${code}!`, 'success');
+      setJoinCodeInput('');
+    } catch (err) {
+      console.warn('Failed to join room:', err);
+      showToast(`⚠️ Error joining room ${code}: ${err.message || 'Network error'}`, 'error');
+    } finally {
+      setIsJoining(false);
+    }
+  };
+
   // Start match immediately from private room modal
   const handleStartPrivateMatchNow = () => {
+    // Multiplayer Start Guard: ensure at least 2 active players
+    const activeCount = ALL_SLOTS.filter((s) => slotStates[s] === 'ACTIVE').length;
+    if (activeCount < 2) {
+      showToast('⚠️ Only you are active! Waiting for at least 1 more player to join before starting.', 'error', 3000);
+      return;
+    }
+
     setIsRoomModalOpen(false);
     setView('ARENA');
     showToast('🚀 Game room started!', 'success');
@@ -960,6 +1027,44 @@ export const WordGridLobby = () => {
               </button>
             </div>
           </div>
+
+          {/* Join Existing Room Section */}
+          <div className="wgb-join-room-card">
+            <div className="wgb-join-room-info">
+              <div className="wgb-join-icon">🚪</div>
+              <div>
+                <h3 className="wgb-join-title">Join Existing Room</h3>
+                <p className="wgb-join-desc">
+                  Have a room code or invite from a friend? Enter it below to join the match.
+                </p>
+              </div>
+            </div>
+            <form
+              className="wgb-join-form"
+              onSubmit={(e) => {
+                e.preventDefault();
+                handleJoinByCode(joinCodeInput);
+              }}
+            >
+              <input
+                type="text"
+                className="wgb-join-input"
+                placeholder="e.g. WGB-ABCD"
+                value={joinCodeInput}
+                onChange={(e) => setJoinCodeInput(e.target.value.toUpperCase())}
+                maxLength={16}
+                disabled={isJoining}
+                aria-label="Room Code"
+              />
+              <button
+                type="submit"
+                className="wgb-join-submit-btn"
+                disabled={isJoining || !joinCodeInput.trim()}
+              >
+                <span>🚪</span> {isJoining ? 'Joining...' : 'Join Room'}
+              </button>
+            </form>
+          </div>
         </main>
       )}
 
@@ -982,6 +1087,13 @@ export const WordGridLobby = () => {
                 {copiedLink ? '✓ Copied!' : '📋 Copy Link'}
               </button>
             </div>
+
+            {/* Multiplayer Guard Notice Banner */}
+            {ALL_SLOTS.filter((s) => slotStates[s] === 'ACTIVE').length < 2 && (
+              <div className="wgb-room-warning-banner">
+                ⚠️ Only you are active in this room. Share your room code above to let friends join before starting!
+              </div>
+            )}
 
             {/* Live Slot Status Cards */}
             <div className="wgb-slots-grid">

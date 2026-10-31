@@ -3,6 +3,9 @@ import './GameCard.css';
 
 const defaultIcons = {
   tictactoe: '❌⭕',
+  ludo: '🎲',
+  wordgrid: '🔤',
+  connectdrop: '🔴🟡',
   snake: '🐍',
   chess: '♟️',
   game2048: '🔢',
@@ -51,10 +54,20 @@ const GameCard = ({ game }) => {
   };
 
   const isLive = isActive && !isMaintenance;
-  const playerTag =
-    minPlayers === maxPlayers
-      ? `${minPlayers} Player${minPlayers > 1 ? 's' : ''} • ${gameMode === 'MULTIPLAYER' ? 'PvP' : 'Solo'}`
-      : `${minPlayers}-${maxPlayers} Players • ${gameMode === 'MULTIPLAYER' ? 'PvP' : 'Solo'}`;
+
+  const getPlayerTag = () => {
+    if (gameMode === 'SINGLE_PLAYER' || maxPlayers === 1) {
+      return '1 Player • Solo';
+    }
+    const min = minPlayers || 2;
+    const max = maxPlayers || min;
+    if (min === 2 && max === 2) {
+      return '1v1 Duel • PvP';
+    }
+    return `${min}–${max} Players (NvN) • PvP`;
+  };
+
+  const playerTag = getPlayerTag();
 
   return (
     <div className={`game-card ${isLive ? 'live-card' : ''}`}>

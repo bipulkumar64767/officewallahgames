@@ -140,6 +140,7 @@ export const LudoLobby = () => {
     return (searchParams.get('room') || '').trim().toUpperCase();
   });
   const [sessionId, setSessionId] = useState('');
+  const [joinCodeInput, setJoinCodeInput] = useState('');
   const [myColor, setMyColor] = useState('RED');
   const [slotStates, setSlotStates] = useState(() => getSlotStatesForCount(2));
   const [playerNames, setPlayerNames] = useState({
@@ -661,8 +662,56 @@ export const LudoLobby = () => {
     });
   };
 
+  // Action: Join Room by Room Code
+  const handleJoinByCode = async (codeToJoin) => {
+    const code = (codeToJoin !== undefined ? codeToJoin : joinCodeInput).trim().toUpperCase();
+    if (!code) {
+      showToast('⚠️ Please enter a valid room code.');
+      return;
+    }
+
+    try {
+      const statusRes = await getLudoRoomStatus(code);
+      if (statusRes && statusRes.status === 'ABANDONED') {
+        showToast(`⚠️ Room ${code} is inactive or abandoned.`);
+        return;
+      }
+
+      const res = await joinLudoRoom({ roomCode: code, playerId, playerName });
+      setRoomCode(code);
+      setSessionId(res.sessionId || `OWG_LDO_${code}`);
+      setMyColor(res.assignedColor || 'YELLOW');
+      setPlayerCount(res.playerCount || 2);
+      setSlotStates(res.slotStates || getSlotStatesForCount(res.playerCount || 2));
+      if (res.playerNames) setPlayerNames(res.playerNames);
+      setView('WAITING_ROOM');
+      showToast(`Joined room ${code}!`);
+    } catch (err) {
+      console.warn('Failed to query or join room, fallback to waiting room:', err);
+      setRoomCode(code);
+      setView('WAITING_ROOM');
+      showToast(`Joined room ${code}!`);
+    }
+  };
+
   // Start match from waiting room
   const handleStartMatchFromRoom = () => {
+    const activeCount = ALL_COLORS.filter(
+      (c) =>
+        slotStates[c] === 'ACTIVE' ||
+        (playerNames[c] &&
+          !playerNames[c].includes('Waiting') &&
+          !playerNames[c].includes('No Player'))
+    ).length;
+
+    if (activeCount < 2) {
+      showToast(
+        '⚠️ Only you are active! Waiting for at least 1 more player to join before starting.',
+        3000
+      );
+      return;
+    }
+
     const activeSlots = { ...slotStates };
     const names = { ...playerNames };
 
@@ -866,6 +915,14 @@ export const LudoLobby = () => {
     );
   };
 
+  const activeCount = ALL_COLORS.filter(
+    (c) =>
+      slotStates[c] === 'ACTIVE' ||
+      (playerNames[c] &&
+        !playerNames[c].includes('Waiting') &&
+        !playerNames[c].includes('No Player'))
+  ).length;
+
   return (
     <div className="ludo-lobby-container">
       {/* Breadcrumb Navigation */}
@@ -934,6 +991,38 @@ export const LudoLobby = () => {
                 <span>Play Solo vs AI</span>
               </button>
             </div>
+
+            {/* Join with Room Code */}
+            <div className="lobby-join-wrapper">
+              <div className="lobby-join-box">
+                <div className="lobby-join-input-wrap">
+                  <span className="lobby-join-icon">🔑</span>
+                  <input
+                    type="text"
+                    className="lobby-join-input"
+                    placeholder="Enter Room Code (e.g. LDO-9421)"
+                    value={joinCodeInput}
+                    onChange={(e) => setJoinCodeInput(e.target.value.toUpperCase())}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        handleJoinByCode(joinCodeInput);
+                      }
+                    }}
+                    maxLength={16}
+                    aria-label="Join with Room Code"
+                  />
+                </div>
+                <button
+                  type="button"
+                  className="btn-join-room"
+                  onClick={() => handleJoinByCode(joinCodeInput)}
+                >
+                  <span>🚪</span>
+                  <span>Join Room</span>
+                </button>
+              </div>
+            </div>
           </div>
         )}
       </section>
@@ -969,6 +1058,15 @@ export const LudoLobby = () => {
                 {copySuccess && <div className="copy-tooltip">Copied!</div>}
               </button>
             </div>
+
+            {/* Prominent waiting alert banner if activeCount < 2 */}
+            {activeCount < 2 && (
+              <div className="waiting-room-alert-banner">
+                <span className="waiting-alert-text">
+                  ⚠️ Only you are active in this room. Share your room code or copy link above so friends can join before starting!
+                </span>
+              </div>
+            )}
 
             {/* 4 Quadrants Live Slots Card */}
             <div className="slots-preview-grid">

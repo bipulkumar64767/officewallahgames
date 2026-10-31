@@ -270,6 +270,156 @@
   color: #fff;
 }
 
+/* Join Existing Room Card */
+.wgb-join-room-card {
+  max-width: 900px;
+  margin: 0 auto 2.5rem;
+  background: var(--wgb-panel-card);
+  border: 1px solid var(--wgb-panel-border);
+  border-radius: 16px;
+  padding: 1.5rem 1.75rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1.5rem;
+  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+}
+
+.wgb-join-room-card:hover {
+  border-color: rgba(0, 201, 167, 0.5);
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.5), 0 0 20px rgba(0, 201, 167, 0.15);
+}
+
+.wgb-join-room-info {
+  display: flex;
+  align-items: center;
+  gap: 1.15rem;
+  text-align: left;
+}
+
+.wgb-join-icon {
+  font-size: 1.85rem;
+  width: 52px;
+  height: 52px;
+  min-width: 52px;
+  border-radius: 14px;
+  background: rgba(0, 201, 167, 0.12);
+  border: 1px solid rgba(0, 201, 167, 0.3);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 0 15px rgba(0, 201, 167, 0.15);
+}
+
+.wgb-join-title {
+  font-size: 1.2rem;
+  font-weight: 700;
+  color: #fff;
+  margin: 0 0 0.3rem;
+  letter-spacing: -0.2px;
+}
+
+.wgb-join-desc {
+  font-size: 0.88rem;
+  color: var(--wgb-text-muted);
+  margin: 0;
+  line-height: 1.4;
+}
+
+.wgb-join-form {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-shrink: 0;
+}
+
+.wgb-join-input {
+  background: rgba(10, 11, 20, 0.85);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 12px;
+  padding: 0.8rem 1.1rem;
+  color: #00c9a7;
+  font-family: monospace;
+  font-size: 1rem;
+  font-weight: 800;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  width: 175px;
+  transition: all 0.2s ease;
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.5);
+}
+
+.wgb-join-input::placeholder {
+  color: rgba(148, 163, 184, 0.5);
+  font-weight: 500;
+  letter-spacing: 0.5px;
+  text-transform: none;
+}
+
+.wgb-join-input:focus {
+  outline: none;
+  border-color: #00c9a7;
+  box-shadow: 0 0 15px rgba(0, 201, 167, 0.4), inset 0 2px 4px rgba(0, 0, 0, 0.5);
+}
+
+.wgb-join-submit-btn {
+  padding: 0.8rem 1.4rem;
+  white-space: nowrap;
+  font-size: 0.95rem;
+  border-radius: 12px;
+  border: 1px solid rgba(0, 201, 167, 0.5);
+  background: rgba(0, 201, 167, 0.15);
+  color: #00c9a7;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.wgb-join-submit-btn:hover:not(:disabled) {
+  background: #00c9a7;
+  color: #0d0e1a;
+  box-shadow: 0 0 20px rgba(0, 201, 167, 0.45);
+  transform: translateY(-2px);
+}
+
+.wgb-join-submit-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  border-color: rgba(255, 255, 255, 0.1);
+  color: var(--wgb-text-muted);
+  background: rgba(255, 255, 255, 0.05);
+}
+
+@media (max-width: 768px) {
+  .wgb-join-room-card {
+    flex-direction: column;
+    align-items: stretch;
+    text-align: center;
+    padding: 1.25rem;
+  }
+  .wgb-join-room-info {
+    flex-direction: column;
+    text-align: center;
+  }
+  .wgb-join-form {
+    flex-direction: column;
+    width: 100%;
+  }
+  .wgb-join-input {
+    width: 100%;
+    box-sizing: border-box;
+    text-align: center;
+  }
+  .wgb-join-submit-btn {
+    width: 100%;
+    justify-content: center;
+  }
+}
+
 /* Modals */
 .wgb-modal-overlay {
   position: fixed;
@@ -361,6 +511,33 @@
   background: #00c9a7;
   color: #000;
   border-color: #00c9a7;
+}
+
+/* Private Room Multiplayer Guard Warning Banner */
+.wgb-room-warning-banner {
+  background: rgba(247, 183, 49, 0.12);
+  border: 1px solid rgba(247, 183, 49, 0.5);
+  box-shadow: 0 0 15px rgba(247, 183, 49, 0.15);
+  border-radius: 12px;
+  padding: 0.85rem 1.15rem;
+  margin: 1rem 0;
+  color: #f7b731;
+  font-size: 0.88rem;
+  font-weight: 600;
+  line-height: 1.45;
+  text-align: center;
+  animation: wgbPulseWarning 2.5s infinite ease-in-out;
+}
+
+@keyframes wgbPulseWarning {
+  0%, 100% {
+    border-color: rgba(247, 183, 49, 0.5);
+    box-shadow: 0 0 12px rgba(247, 183, 49, 0.15);
+  }
+  50% {
+    border-color: rgba(247, 183, 49, 0.9);
+    box-shadow: 0 0 22px rgba(247, 183, 49, 0.35);
+  }
 }
 
 /* Live Slot Status Cards */

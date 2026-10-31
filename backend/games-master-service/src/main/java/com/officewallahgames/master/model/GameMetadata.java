@@ -23,5 +23,8 @@ public class GameMetadata {
     private boolean isActive;
     @com.fasterxml.jackson.annotation.JsonProperty("isMaintenance")
     private boolean isMaintenance;
+    @com.fasterxml.jackson.annotation.JsonProperty("isTrending")
+    private boolean isTrending;
+    private long playCount;
     private int displayOrder;
 }
