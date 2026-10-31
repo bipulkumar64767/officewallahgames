@@ -905,8 +905,11 @@ export const WordGridLobby = () => {
     } catch (err) {
       console.warn('Failed to join room:', err);
       const isFull = /full|maximum|already/i.test(err.message || '');
+      const isExpiredOrNotFound = /not exist|expired|not found/i.test(err.message || '');
       if (isFull) {
         showToast('⚠️ Room is full! Maximum players already joined.', 'error', 4000);
+      } else if (isExpiredOrNotFound) {
+        showToast(err.message || `⚠️ Room ${code} does not exist or has expired.`, 'error', 4000);
       } else {
         showToast(`⚠️ Error joining room ${code}: ${err.message || 'Network error'}`, 'error');
       }

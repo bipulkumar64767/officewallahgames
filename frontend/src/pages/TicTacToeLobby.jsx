@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { useSearchParams, Link } from 'react-router-dom';
 import confetti from 'canvas-confetti';
 import { useAuth } from '../context/AuthContext';
+import { getPlayerIdentity } from '../utils/playerIdentity';
 import {
   tictactoeApi,
   checkWinner,
@@ -65,6 +66,10 @@ const TicTacToeLobby = () => {
   // Hover ghost preview
   const [hoveredCell, setHoveredCell] = useState(null);
 
+  const playerIdentity = getPlayerIdentity(user);
+  const playerId = playerIdentity.playerId;
+  const playerName = playerIdentity.playerName;
+
   // State refs for async callbacks & websockets
   const boardRef = useRef(board);
   const currentTurnRef = useRef(currentTurn);
@@ -72,14 +77,11 @@ const TicTacToeLobby = () => {
   const mySymbolRef = useRef(mySymbol);
   const isHostRef = useRef(isHost);
   const sessionIdRef = useRef(sessionId);
-  const playerIdRef = useRef(user?.userId || 'GUEST_LOCAL');
-  const playerNameRef = useRef(user?.displayName || 'Player');
+  const playerIdRef = useRef(playerId);
+  const playerNameRef = useRef(playerName);
   const viewRef = useRef(view);
   const searchTimerRef = useRef(null);
   const hasAutoJoinedRef = useRef(false);
-
-  const playerId = user?.userId || 'GUEST_LOCAL';
-  const playerName = user?.displayName || 'Player';
 
   useEffect(() => {
     boardRef.current = board;
@@ -222,29 +224,34 @@ const TicTacToeLobby = () => {
             : 'Match started! Host moves first (X).'
         );
       } else if (eventType === 'MOVE_MADE' || eventType === 'MOVE' || payload.position !== undefined) {
+        if (payload.playerId && payload.playerId === playerIdRef.current) {
+          return; // Skip own broadcast echo
+        }
+
+        let updatedBoard = null;
         if (serverBoard && Array.isArray(serverBoard)) {
-          setBoard(serverBoard);
+          updatedBoard = serverBoard.map((c) => (c ? String(c).trim() : ''));
+        } else if (payload.position !== undefined && payload.symbol) {
+          updatedBoard = [...boardRef.current];
+          updatedBoard[payload.position] = payload.symbol;
+        }
+
+        if (updatedBoard) {
+          setBoard(updatedBoard);
           const outcome = session.winner
             ? { winner: session.winner, winningPattern: session.winningPattern }
-            : checkWinner(serverBoard);
+            : checkWinner(updatedBoard);
           if (outcome && outcome.winner) {
             handleGameOver(outcome);
             return;
           }
-        } else if (payload.position !== undefined && payload.symbol) {
-          setBoard((prev) => {
-            const next = [...prev];
-            next[payload.position] = payload.symbol;
-            const outcome = checkWinner(next);
-            if (outcome && outcome.winner) {
-              handleGameOver(outcome);
-            }
-            return next;
-          });
         }
+
         setTurnTimer(30);
         if (nextTurn) {
           setCurrentTurn(nextTurn);
+        } else if (payload.symbol) {
+          setCurrentTurn(payload.symbol === 'X' ? 'O' : 'X');
         } else {
           setCurrentTurn((prev) => (prev === 'X' ? 'O' : 'X'));
         }
@@ -435,8 +442,11 @@ const TicTacToeLobby = () => {
       } catch (err) {
         console.error('Join room error:', err);
         const isFull = /full|maximum|already/i.test(err.message || '');
+        const isExpiredOrNotFound = /not exist|expired|not found/i.test(err.message || '');
         if (isFull) {
           setStatusMessage('⚠️ Room is full! Maximum 2 players already joined.');
+        } else if (isExpiredOrNotFound) {
+          setStatusMessage(err.message || '⚠️ Room does not exist or has expired.');
         } else {
           setStatusMessage(err.message || 'Could not join room. Check the code and try again.');
         }
@@ -481,7 +491,7 @@ const TicTacToeLobby = () => {
   // Cell Click Handler
   const handleCellClick = (index) => {
     if (view !== 'PLAYING' || isGameOver) return;
-    if (board[index] !== '') return;
+    if (board[index] && board[index].trim() !== '') return;
     if (currentTurn !== mySymbol) return;
 
     const newBoard = [...board];
@@ -499,6 +509,7 @@ const TicTacToeLobby = () => {
       tictactoeSocket.sendRoomEvent(sessionId, {
         type: 'MOVE_MADE',
         eventType: 'MOVE_MADE',
+        playerId,
         position: index,
         symbol: mySymbol,
         nextTurn,

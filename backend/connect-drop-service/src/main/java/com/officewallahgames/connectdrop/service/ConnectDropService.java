@@ -89,12 +89,13 @@ public class ConnectDropService {
         String roomCode = request.getRoomCode().trim().toUpperCase();
         String sessionId = roomCodeToSessionId.get(roomCode);
         if (sessionId == null) {
-            throw new GameException("Room not found: " + request.getRoomCode());
+            throw new GameException("Room " + roomCode + " does not exist or has expired.");
         }
 
         ConnectDropSession session = sessionsById.get(sessionId);
-        if (session == null) {
-            throw new GameException("Game session not found for room: " + request.getRoomCode());
+        if (session == null || session.getStatus() == GameStatus.COMPLETED || session.getStatus() == GameStatus.ABANDONED) {
+            roomCodeToSessionId.remove(roomCode);
+            throw new GameException("Room " + roomCode + " does not exist or has expired.");
         }
 
         String playerId = (request.getPlayerId() != null && !request.getPlayerId().isBlank())
@@ -150,11 +151,12 @@ public class ConnectDropService {
         String normalizedCode = roomCode.trim().toUpperCase();
         String sessionId = roomCodeToSessionId.get(normalizedCode);
         if (sessionId == null) {
-            throw new GameException("Room not found: " + roomCode);
+            throw new GameException("Room " + roomCode + " does not exist or has expired.");
         }
         ConnectDropSession session = sessionsById.get(sessionId);
-        if (session == null) {
-            throw new GameException("Game session not found for room: " + roomCode);
+        if (session == null || session.getStatus() == GameStatus.COMPLETED || session.getStatus() == GameStatus.ABANDONED) {
+            roomCodeToSessionId.remove(normalizedCode);
+            throw new GameException("Room " + roomCode + " does not exist or has expired.");
         }
         return session;
     }
@@ -234,11 +236,17 @@ public class ConnectDropService {
         String eventType;
         String message;
         if (result.isWin()) {
+            session.setStatus(GameStatus.COMPLETED);
+            roomCodeToSessionId.remove(session.getRoomCode());
+            log.info("ConnectDrop room {} marked as completed and expired/deleted internally.", session.getRoomCode());
             eventType = "GAME_OVER";
             message = "Player " + result.getColor() + " (" +
                     (result.getColor() == DiscColor.RED ? session.getPlayerRedName() : session.getPlayerYellowName()) +
                     ") wins the game!";
         } else if (result.isDraw()) {
+            session.setStatus(GameStatus.COMPLETED);
+            roomCodeToSessionId.remove(session.getRoomCode());
+            log.info("ConnectDrop room {} marked as completed and expired/deleted internally.", session.getRoomCode());
             eventType = "DRAW";
             message = "Game ended in a draw! All cells filled.";
         } else {

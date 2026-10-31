@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { useSearchParams, Link } from 'react-router-dom';
 import confetti from 'canvas-confetti';
 import { useAuth } from '../context/AuthContext';
+import { getPlayerIdentity } from '../utils/playerIdentity';
 import {
   createLudoRoom,
   joinLudoRoom,
@@ -245,8 +246,9 @@ export const LudoLobby = () => {
     sessionId,
   ]);
 
-  const playerId = user?.userId || 'GUEST_LOCAL';
-  const playerName = user?.displayName || 'Player';
+  const playerIdentity = getPlayerIdentity(user);
+  const playerId = playerIdentity.playerId;
+  const playerName = playerIdentity.playerName;
 
   // Show transient toast
   const showToast = useCallback((msg, durationMs = 2000) => {
@@ -439,6 +441,7 @@ export const LudoLobby = () => {
         ludoSocket.sendRoomEvent(stateRef.current.sessionId, {
           type: 'TOKEN_MOVED',
           eventType: 'TOKEN_MOVED',
+          playerId,
           color: turnColor,
           tokenId,
           tokens: newTokens,
@@ -489,6 +492,7 @@ export const LudoLobby = () => {
         ludoSocket.sendRoomEvent(stateRef.current.sessionId, {
           type: 'DICE_ROLLED',
           eventType: 'DICE_ROLLED',
+          playerId,
           diceValue: rolledVal,
           rollerColor: stateRef.current.currentTurn,
           consecutiveSixes: nextSixes,
@@ -516,9 +520,9 @@ export const LudoLobby = () => {
     }, 600);
   }, [isRolling, hasRolled, isGameOver, computeMovableTokens, passTurnToNext, showToast, isSoloAI, playerId]);
 
-  // AI Opponent Decision Engine
+  // AI Opponent Decision Engine - ONLY runs in Solo AI mode
   useEffect(() => {
-    if (view !== 'PLAYING' || isGameOver) return;
+    if (view !== 'PLAYING' || isGameOver || !isSoloAI) return;
 
     const { currentTurn: turn, myColor: humanColor, hasRolled: rolled, diceValue: roll, tokens: curTokens } = stateRef.current;
     const isAiTurn = turn !== humanColor;
@@ -688,6 +692,9 @@ export const LudoLobby = () => {
         setView('PLAYING');
         showToast('🚀 Match started! RED goes first.', 3000);
       } else if (eventType === 'DICE_ROLLED') {
+        if (evt.playerId && evt.playerId === playerId) {
+          return; // Skip own echo
+        }
         const val = evt.diceValue || (data && data.diceValue);
         if (val) {
           setDiceValue(val);
@@ -701,6 +708,9 @@ export const LudoLobby = () => {
         }
         setTurnTimer(30);
       } else if (eventType === 'TOKEN_MOVED') {
+        if (evt.playerId && evt.playerId === playerId) {
+          return; // Skip own echo
+        }
         if (evt.tokens) {
           setTokens(evt.tokens);
         }
@@ -936,8 +946,11 @@ export const LudoLobby = () => {
     } catch (err) {
       console.warn('Failed to join room:', err);
       const isFull = /full|maximum|already/i.test(err.message || '');
+      const isExpiredOrNotFound = /not exist|expired|not found/i.test(err.message || '');
       if (isFull) {
         showToast(`⚠️ Room is full! Maximum players already joined.`, 4000);
+      } else if (isExpiredOrNotFound) {
+        showToast(err.message || `⚠️ Room does not exist or has expired.`, 4000);
       } else {
         showToast(err.message || `⚠️ Could not join room ${code}. Please verify code.`, 3500);
       }

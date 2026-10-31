@@ -241,7 +241,7 @@ export const joinConnectDropRoom = async ({ roomCode, playerId, playerName }) =>
     }
     return data.data || data;
   } catch (err) {
-    const isRoomFullOrStarted = /full|maximum|already|started|completed|not found|cannot join/i.test(err.message || '');
+    const isRoomFullOrStarted = /full|maximum|already|started|completed|not found|cannot join|not exist|expired/i.test(err.message || '');
     if (isRoomFullOrStarted) {
       throw err;
     }

@@ -123,12 +123,13 @@ public class WordGridService {
         String cleanCode = request.getRoomCode().trim().toUpperCase();
         String sessionId = roomCodeToSessionId.get(cleanCode);
         if (sessionId == null) {
-            throw new GameException("Room not found: " + cleanCode);
+            throw new GameException("Room " + cleanCode + " does not exist or has expired.");
         }
 
         WordGridSession session = sessionsById.get(sessionId);
-        if (session == null) {
-            throw new GameException("Session not found for room: " + cleanCode);
+        if (session == null || session.getStatus() == GameStatus.COMPLETED || session.getStatus() == GameStatus.GAME_OVER || session.getStatus() == GameStatus.ABANDONED) {
+            roomCodeToSessionId.remove(cleanCode);
+            throw new GameException("Room " + cleanCode + " does not exist or has expired.");
         }
 
         if (session.getStatus() != GameStatus.WAITING_FOR_PLAYERS) {
@@ -208,13 +209,15 @@ public class WordGridService {
         if (roomCode == null || roomCode.isBlank()) {
             throw new GameException("Room code cannot be empty");
         }
-        String sessionId = roomCodeToSessionId.get(roomCode.trim().toUpperCase());
+        String cleanCode = roomCode.trim().toUpperCase();
+        String sessionId = roomCodeToSessionId.get(cleanCode);
         if (sessionId == null) {
-            throw new GameException("Room not found: " + roomCode);
+            throw new GameException("Room " + roomCode + " does not exist or has expired.");
         }
         WordGridSession session = sessionsById.get(sessionId);
-        if (session == null) {
-            throw new GameException("Session not found: " + sessionId);
+        if (session == null || session.getStatus() == GameStatus.COMPLETED || session.getStatus() == GameStatus.GAME_OVER || session.getStatus() == GameStatus.ABANDONED) {
+            roomCodeToSessionId.remove(cleanCode);
+            throw new GameException("Room " + roomCode + " does not exist or has expired.");
         }
         return session;
     }
@@ -313,6 +316,8 @@ public class WordGridService {
         if (winner != null) {
             session.setStatus(GameStatus.GAME_OVER);
             session.setWinner(winner);
+            roomCodeToSessionId.remove(session.getRoomCode());
+            log.info("WordGrid room {} marked as completed and expired/deleted internally.", session.getRoomCode());
             broadcastEvent(session, WordGridEventDto.builder()
                     .type("GAME_OVER")
                     .session(session)
@@ -370,6 +375,8 @@ public class WordGridService {
             if (winner != null) {
                 session.setStatus(GameStatus.GAME_OVER);
                 session.setWinner(winner);
+                roomCodeToSessionId.remove(session.getRoomCode());
+                log.info("WordGrid room {} marked as completed and expired/deleted internally.", session.getRoomCode());
                 broadcastEvent(session, WordGridEventDto.builder()
                         .type("GAME_OVER")
                         .session(session)

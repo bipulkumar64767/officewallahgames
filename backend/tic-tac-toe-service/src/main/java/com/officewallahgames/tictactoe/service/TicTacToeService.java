@@ -54,12 +54,15 @@ public class TicTacToeService {
                 ? request.getPlayerName()
                 : "Player X";
 
+        String[] initialBoard = new String[9];
+        java.util.Arrays.fill(initialBoard, "");
+
         GameSession session = GameSession.builder()
                 .sessionId(sessionId)
                 .roomCode(roomCode)
                 .playerX(playerId)
                 .playerXName(playerName)
-                .board(new String[9])
+                .board(initialBoard)
                 .currentTurn("X")
                 .status(GameStatus.WAITING_FOR_OPPONENT)
                 .createdAt(Instant.now())
@@ -85,12 +88,13 @@ public class TicTacToeService {
         String roomCode = request.getRoomCode().trim().toUpperCase();
         String sessionId = roomCodeToSessionId.get(roomCode);
         if (sessionId == null) {
-            throw new GameException("Room not found: " + request.getRoomCode());
+            throw new GameException("Room " + roomCode + " does not exist or has expired.");
         }
 
         GameSession session = sessionsById.get(sessionId);
-        if (session == null) {
-            throw new GameException("Game session not found for room: " + request.getRoomCode());
+        if (session == null || session.getStatus() == GameStatus.COMPLETED || session.getStatus() == GameStatus.ABANDONED) {
+            roomCodeToSessionId.remove(roomCode);
+            throw new GameException("Room " + roomCode + " does not exist or has expired.");
         }
 
         synchronized (session) {
@@ -135,11 +139,12 @@ public class TicTacToeService {
         String normalizedCode = roomCode.trim().toUpperCase();
         String sessionId = roomCodeToSessionId.get(normalizedCode);
         if (sessionId == null) {
-            throw new GameException("Room not found: " + roomCode);
+            throw new GameException("Room " + roomCode + " does not exist or has expired.");
         }
         GameSession session = sessionsById.get(sessionId);
-        if (session == null) {
-            throw new GameException("Game session not found for room: " + roomCode);
+        if (session == null || session.getStatus() == GameStatus.COMPLETED || session.getStatus() == GameStatus.ABANDONED) {
+            roomCodeToSessionId.remove(normalizedCode);
+            throw new GameException("Room " + roomCode + " does not exist or has expired.");
         }
         return session;
     }
@@ -218,6 +223,9 @@ public class TicTacToeService {
         String eventType;
         String message;
         if (session.getStatus() == GameStatus.COMPLETED) {
+            // Room is used and completed: expire room code internally so it cannot be reused
+            roomCodeToSessionId.remove(session.getRoomCode());
+            log.info("Room {} marked as completed and expired/deleted internally.", session.getRoomCode());
             eventType = "GAME_OVER";
             if ("DRAW".equalsIgnoreCase(session.getWinner())) {
                 message = "Game ended in a draw!";

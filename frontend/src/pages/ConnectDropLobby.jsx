@@ -624,8 +624,11 @@ const ConnectDropLobby = () => {
       } catch (err) {
         console.warn('Join room error:', err);
         const isFull = /full|maximum|already/i.test(err.message || '');
+        const isExpiredOrNotFound = /not exist|expired|not found/i.test(err.message || '');
         if (isFull) {
           showToast('⚠️ Room is full! Maximum 2 players already joined.', 'warning');
+        } else if (isExpiredOrNotFound) {
+          showToast(err.message || '⚠️ Room does not exist or has expired.', 'warning');
         } else {
           showToast(err.message || 'Failed to join room. Verify code and try again.', 'warning');
         }

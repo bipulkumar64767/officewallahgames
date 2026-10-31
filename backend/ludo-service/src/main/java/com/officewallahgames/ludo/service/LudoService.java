@@ -111,12 +111,13 @@ public class LudoService {
         String normalizedCode = request.getRoomCode().trim().toUpperCase();
         String sessionId = roomCodeToSessionId.get(normalizedCode);
         if (sessionId == null) {
-            throw new GameException("Room not found: " + request.getRoomCode());
+            throw new GameException("Room " + request.getRoomCode() + " does not exist or has expired.");
         }
 
         LudoSession session = sessionsById.get(sessionId);
-        if (session == null) {
-            throw new GameException("Game session not found: " + sessionId);
+        if (session == null || session.getStatus() == GameStatus.COMPLETED || session.getStatus() == GameStatus.ABANDONED) {
+            roomCodeToSessionId.remove(normalizedCode);
+            throw new GameException("Room " + request.getRoomCode() + " does not exist or has expired.");
         }
 
         synchronized (session) {
@@ -187,11 +188,12 @@ public class LudoService {
         String normalizedCode = roomCode.trim().toUpperCase();
         String sessionId = roomCodeToSessionId.get(normalizedCode);
         if (sessionId == null) {
-            throw new GameException("Room not found: " + roomCode);
+            throw new GameException("Room " + roomCode + " does not exist or has expired.");
         }
         LudoSession session = sessionsById.get(sessionId);
-        if (session == null) {
-            throw new GameException("Game session not found for room: " + roomCode);
+        if (session == null || session.getStatus() == GameStatus.COMPLETED || session.getStatus() == GameStatus.ABANDONED) {
+            roomCodeToSessionId.remove(normalizedCode);
+            throw new GameException("Room " + roomCode + " does not exist or has expired.");
         }
         return session;
     }
@@ -367,6 +369,9 @@ public class LudoService {
 
             // Broadcast game over or normal move event
             if (result.isGameOver()) {
+                session.setStatus(GameStatus.COMPLETED);
+                roomCodeToSessionId.remove(session.getRoomCode());
+                log.info("Ludo room {} marked as completed and expired/deleted internally.", session.getRoomCode());
                 LudoEventDto overEvent = LudoEventDto.of("GAME_OVER", session,
                         "Game over! Winner is " + session.getRankings().get(0));
                 messagingTemplate.convertAndSend("/topic/ludo/" + sessionId, overEvent);
