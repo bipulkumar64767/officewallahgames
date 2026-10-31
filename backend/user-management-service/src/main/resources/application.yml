@@ -12,7 +12,7 @@ spring:
       ssl:
         enabled: ${REDIS_SSL_ENABLED:false}
   datasource:
-    url: ${DB_URL:jdbc:postgresql://localhost:5432/owg_users}
+    url: ${DB_URL_USERS:${DB_URL:jdbc:postgresql://localhost:5432/owg_users}}
     username: ${DB_USERNAME:postgres}
     password: ${DB_PASSWORD:postgres}
     driver-class-name: org.postgresql.Driver

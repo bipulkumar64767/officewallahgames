@@ -45,6 +45,18 @@ services:
     envVars:
       - key: DB_URL
         value: jdbc:postgresql://pg-341588eb-meta-write.d.aivencloud.com:23090/owg_master?sslmode=require
+      - key: DB_URL_MASTER
+        value: jdbc:postgresql://pg-341588eb-meta-write.d.aivencloud.com:23090/owg_master?sslmode=require
+      - key: DB_URL_USERS
+        value: jdbc:postgresql://pg-341588eb-meta-write.d.aivencloud.com:23090/owg_users?sslmode=require
+      - key: DB_URL_TICTACTOE
+        value: jdbc:postgresql://pg-341588eb-meta-write.d.aivencloud.com:23090/owg_tictactoe?sslmode=require
+      - key: DB_URL_LUDO
+        value: jdbc:postgresql://pg-341588eb-meta-write.d.aivencloud.com:23090/owg_ludo?sslmode=require
+      - key: DB_URL_WORDGRID
+        value: jdbc:postgresql://pg-341588eb-meta-write.d.aivencloud.com:23090/owg_wordgrid?sslmode=require
+      - key: DB_URL_CONNECTDROP
+        value: jdbc:postgresql://pg-341588eb-meta-write.d.aivencloud.com:23090/owg_connectdrop?sslmode=require
       - key: DB_USERNAME
         value: avnadmin
       - key: DB_PASSWORD
