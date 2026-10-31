@@ -1,0 +1,26 @@
+server:
+  port: ${PORT:8080}
+
+spring:
+  application:
+    name: officewallahgames-server
+  main:
+    allow-bean-definition-overriding: true
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+      ssl:
+        enabled: ${REDIS_SSL_ENABLED:false}
+  datasource:
+    url: ${DB_URL_MASTER:${DB_URL:jdbc:postgresql://localhost:5432/owg_master}}
+    username: ${DB_USERNAME:postgres}
+    password: ${DB_PASSWORD:postgres}
+    driver-class-name: org.postgresql.Driver
+
+app:
+  auth:
+    fixed-token: ${AUTH_FIXED_TOKEN:owg-fixed-auth-token-2026}
+    snowflake-worker-id: ${SNOWFLAKE_WORKER_ID:1}
+    snowflake-datacenter-id: ${SNOWFLAKE_DATACENTER_ID:1}
