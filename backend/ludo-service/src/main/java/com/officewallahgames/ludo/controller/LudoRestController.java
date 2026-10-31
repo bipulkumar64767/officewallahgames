@@ -47,6 +47,15 @@ public class LudoRestController {
         return ResponseEntity.ok(ApiResponse.success(session));
     }
 
+    @PostMapping("/rooms/{sessionId}/leave")
+    public ResponseEntity<ApiResponse<Void>> leaveRoom(
+            @PathVariable String sessionId,
+            @RequestBody(required = false) Map<String, Object> payload) {
+        String playerId = (payload != null && payload.get("playerId") != null) ? payload.get("playerId").toString() : null;
+        ludoService.leaveRoom(sessionId, playerId);
+        return ResponseEntity.ok(ApiResponse.success(null, "Left Ludo room successfully"));
+    }
+
     @PostMapping("/rooms/{sessionId}/disband")
     public ResponseEntity<ApiResponse<Void>> disbandRoom(
             @PathVariable String sessionId,

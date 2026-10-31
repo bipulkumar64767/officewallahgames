@@ -89,14 +89,14 @@
 }
 
 .wgb-lobby-title {
-  font-size: 2.75rem;
+  font-size: clamp(1.8rem, 5vw, 2.75rem);
   font-weight: 900;
   letter-spacing: -0.5px;
   margin: 0 0 0.5rem;
-  background: linear-gradient(135deg, #ffffff 30%, #e94560 70%, #00c9a7 100%);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  text-shadow: 0 0 30px rgba(233, 69, 96, 0.3);
+  color: #ffffff;
+  text-shadow: 0 0 25px rgba(233, 69, 96, 0.5);
+  line-height: 1.25;
+  display: block;
 }
 
 .wgb-lobby-subtitle {

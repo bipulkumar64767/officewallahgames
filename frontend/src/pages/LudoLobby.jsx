@@ -282,10 +282,19 @@ export const LudoLobby = () => {
     isTokenMoving,
   ]);
 
-  // Show transient toast
+  // Show transient toast with deduplication
+  const lastToastRef = useRef({ msg: '', time: 0 });
+  const toastTimeoutRef = useRef(null);
   const showToast = useCallback((msg, durationMs = 2000) => {
+    if (!msg) return;
+    const now = Date.now();
+    if (lastToastRef.current.msg === msg && now - lastToastRef.current.time < 1800) {
+      return; // Deduplicate identical toasts within 1.8s
+    }
+    lastToastRef.current = { msg, time: now };
     setToastMessage(msg);
-    setTimeout(() => {
+    if (toastTimeoutRef.current) clearTimeout(toastTimeoutRef.current);
+    toastTimeoutRef.current = setTimeout(() => {
       setToastMessage((prev) => (prev === msg ? '' : prev));
     }, durationMs);
   }, []);
@@ -732,10 +741,33 @@ export const LudoLobby = () => {
 
       // Disband handling
       if (eventType === 'MATCH_DISBANDED') {
-        const leaver = evt.leaver || evt.playerName || 'A player';
+        if (stateRef.current.view === 'WAITING_ROOM' && !evt.isHost && evt.leaver !== stateRef.current.playerNames.RED) {
+          // In waiting room, ignore non-host disband
+          return;
+        }
+        const leaver = evt.leaver || evt.playerName || 'Host';
         setDisbandMessage(evt.message || `⚠️ Match Disbanded: ${leaver} has left the match.`);
         setIsMatchDisbanded(true);
         voiceChat.disconnectVoice();
+        return;
+      }
+
+      // Guest left waiting room: free up slot on host dashboard
+      if (eventType === 'PLAYER_LEFT') {
+        const leftColor = evt.color || (data.assignedColor) ||
+          (data.session?.players && Object.keys(data.session.players).find((c) => data.session.players[c] === evt.playerId));
+        if (leftColor) {
+          setSlotStates((prev) => ({ ...prev, [leftColor]: 'WAITING' }));
+          setPlayerNames((prev) => ({ ...prev, [leftColor]: 'Waiting for player...' }));
+          setReadyStates((prev) => ({ ...prev, [leftColor]: false }));
+        }
+        if (data.slotStates) {
+          setSlotStates((prev) => ({ ...prev, ...data.slotStates }));
+        }
+        if (data.playerNames) {
+          setPlayerNames((prev) => ({ ...prev, ...data.playerNames }));
+        }
+        showToast(evt.message || `${evt.playerName || 'Guest'} left the room. Slot is now free!`);
         return;
       }
 
@@ -937,6 +969,9 @@ export const LudoLobby = () => {
     [showToast, playerId, voiceChat]
   );
 
+  const handleSocketEventRef = useRef(null);
+  handleSocketEventRef.current = handleSocketEvent;
+
   useEffect(() => {
     if (!sessionId || isSoloAI) return;
 
@@ -952,13 +987,17 @@ export const LudoLobby = () => {
           });
         }
       },
-      onEvent: handleSocketEvent,
+      onEvent: (evt) => {
+        if (handleSocketEventRef.current) {
+          handleSocketEventRef.current(evt);
+        }
+      },
     });
 
     return () => {
       ludoSocket.disconnect();
     };
-  }, [sessionId, isSoloAI, handleSocketEvent, playerId, playerName]);
+  }, [sessionId, isSoloAI, playerId, playerName]);
 
   // URL Query auto-join effect (Only triggers once on initial mount; never on return to lobby)
   useEffect(() => {
@@ -1186,12 +1225,34 @@ export const LudoLobby = () => {
     voiceChat.disconnectVoice();
 
     if (!isSoloAI && sessionId) {
-      ludoSocket.sendRoomEvent(sessionId, {
-        type: 'MATCH_DISBANDED',
-        eventType: 'MATCH_DISBANDED',
-        leaver: playerName,
-        message: `⚠️ Match Disbanded: ${playerName} has left the match.`,
-      });
+      if (view === 'WAITING_ROOM' && !isHost) {
+        // Guest leaving waiting room: notify room & backend to free slot
+        ludoSocket.sendRoomEvent(sessionId, {
+          type: 'PLAYER_LEFT',
+          eventType: 'PLAYER_LEFT',
+          color: myColor,
+          playerId,
+          playerName,
+          message: `${playerName} left the room.`,
+        });
+        // Call backend leave endpoint
+        try {
+          fetch(`/api/v1/ludo/rooms/${sessionId}/leave`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ playerId, color: myColor }),
+          }).catch(() => {});
+        } catch (_) {}
+      } else {
+        // Host leaving or in-game forfeit: disband the match
+        ludoSocket.sendRoomEvent(sessionId, {
+          type: 'MATCH_DISBANDED',
+          eventType: 'MATCH_DISBANDED',
+          isHost,
+          leaver: playerName,
+          message: `⚠️ Match Disbanded: ${playerName} has left the match.`,
+        });
+      }
     }
 
     ludoSocket.disconnect();

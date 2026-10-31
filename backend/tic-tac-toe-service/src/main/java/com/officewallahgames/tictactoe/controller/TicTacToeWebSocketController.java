@@ -36,6 +36,14 @@ public class TicTacToeWebSocketController {
         ticTacToeService.requestRematch(sessionId, playerId);
     }
 
+    @MessageMapping("/game/{sessionId}/leave")
+    public void leaveRoom(@DestinationVariable String sessionId, Map<String, Object> payload) {
+        String playerId = payload != null && payload.get("playerId") != null
+                ? payload.get("playerId").toString()
+                : null;
+        ticTacToeService.leaveRoom(sessionId, playerId);
+    }
+
     @MessageMapping("/game/{sessionId}/disband")
     public void handleDisband(
             @DestinationVariable String sessionId,

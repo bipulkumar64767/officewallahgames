@@ -222,28 +222,64 @@ public class LudoService {
     }
 
     /**
-     * Sets status to GameStatus.ABANDONED, removes roomCode from roomCodeToSessionId,
-     * and broadcasts MATCH_DISBANDED to /topic/ludo/{sessionId}.
+     * Handles player leaving. If the host leaves or match is ACTIVE, disbands the match.
+     * If a guest leaves during WAITING_FOR_PLAYERS, frees up that color slot, resets ready state,
+     * keeps the room open, and broadcasts PLAYER_LEFT so new players can join.
      */
-    public void disbandRoom(String sessionId, String playerId) {
+    public void leaveRoom(String sessionId, String playerId) {
         LudoSession session = sessionsById.get(sessionId);
         if (session == null) {
-            log.warn("Cannot disband non-existent session {}", sessionId);
+            log.warn("Cannot leave non-existent session {}", sessionId);
             return;
         }
 
         synchronized (session) {
-            session.setStatus(GameStatus.ABANDONED);
-            session.setUpdatedAt(System.currentTimeMillis());
-            if (session.getRoomCode() != null) {
-                roomCodeToSessionId.remove(session.getRoomCode());
+            boolean isHost = playerId != null && playerId.equals(session.getPlayers().get(PlayerColor.RED));
+
+            if (session.getStatus() == GameStatus.ACTIVE || isHost) {
+                session.setStatus(GameStatus.ABANDONED);
+                session.setUpdatedAt(System.currentTimeMillis());
+                if (session.getRoomCode() != null) {
+                    roomCodeToSessionId.remove(session.getRoomCode());
+                }
+                LudoEventDto event = LudoEventDto.of("MATCH_DISBANDED", session,
+                        (isHost ? "Host" : "A player") + " has left the match.");
+                messagingTemplate.convertAndSend("/topic/ludo/" + sessionId, event);
+                log.info("Ludo room {} disbanded as {} left.", session.getRoomCode(), isHost ? "host" : "player during match");
+                return;
+            }
+
+            // In WAITING_FOR_PLAYERS: guest leaves, free up their slot!
+            PlayerColor leavingColor = null;
+            for (Map.Entry<PlayerColor, String> entry : session.getPlayers().entrySet()) {
+                if (playerId != null && playerId.equals(entry.getValue())) {
+                    leavingColor = entry.getKey();
+                    break;
+                }
+            }
+
+            if (leavingColor != null) {
+                String leavingName = session.getPlayerNames().getOrDefault(leavingColor, "Guest");
+                session.getPlayers().remove(leavingColor);
+                session.getPlayerNames().remove(leavingColor);
+                session.getSlotStates().put(leavingColor, SlotState.WAITING);
+                session.setStatus(GameStatus.WAITING_FOR_PLAYERS);
+                session.setUpdatedAt(System.currentTimeMillis());
+
+                LudoEventDto event = LudoEventDto.of("PLAYER_LEFT", session,
+                        leavingName + " has left the room. Slot " + leavingColor + " is now open.");
+                messagingTemplate.convertAndSend("/topic/ludo/" + sessionId, event);
+                log.info("Player {} left Ludo room {}, slot {} freed for new players", playerId, session.getRoomCode(), leavingColor);
             }
         }
+    }
 
-        LudoEventDto event = LudoEventDto.of("MATCH_DISBANDED", session,
-                "A player has left or disbanded the room.");
-        messagingTemplate.convertAndSend("/topic/ludo/" + sessionId, event);
-        log.info("Ludo room {} (sessionId: {}) disbanded by player {}", session.getRoomCode(), sessionId, playerId);
+    /**
+     * Sets status to GameStatus.ABANDONED, removes roomCode from roomCodeToSessionId,
+     * and broadcasts MATCH_DISBANDED to /topic/ludo/{sessionId}.
+     */
+    public void disbandRoom(String sessionId, String playerId) {
+        leaveRoom(sessionId, playerId);
     }
 
     /**

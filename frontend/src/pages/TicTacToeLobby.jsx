@@ -777,8 +777,19 @@ const TicTacToeLobby = () => {
           if (payload.currentTurn) setCurrentTurn(payload.currentTurn);
           if (payload.turnTimer !== undefined) setTurnTimer(payload.turnTimer);
         }
+      } else if (eventType === 'PLAYER_LEFT') {
+        if (isHostRef.current) {
+          setPlayerOName('Waiting for Challenger...');
+          setOpponentJoined(false);
+          setOpponentReady(false);
+          setStatusMessage('Opponent left the room. Waiting for a new challenger to join!');
+        }
       } else if (eventType === 'MATCH_DISBANDED') {
         if (payload.leaverName && payload.leaverName === playerNameRef.current) {
+          return;
+        }
+        if (viewRef.current === 'WAITING_ROOM' && isHostRef.current) {
+          // In waiting room, host ignores non-host disbands
           return;
         }
         setIsMatchDisbanded(true);
@@ -1122,11 +1133,31 @@ const TicTacToeLobby = () => {
       searchTimerRef.current = null;
     }
     if (!isAiOpponent && sessionId) {
-      tictactoeSocket.sendRoomEvent(sessionId, {
-        type: 'MATCH_DISBANDED',
-        leaverName: playerName,
-        message: `${playerName} left the match.`,
-      });
+      if (view === 'WAITING_ROOM' && !isHost) {
+        // Guest leaves waiting room: notify host and free player O slot
+        tictactoeSocket.sendRoomEvent(sessionId, {
+          type: 'PLAYER_LEFT',
+          eventType: 'PLAYER_LEFT',
+          symbol: 'O',
+          playerId,
+          playerName,
+          message: `${playerName} left the room.`,
+        });
+        try {
+          fetch(`/api/v1/tictactoe/rooms/${sessionId}/leave`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ playerId }),
+          }).catch(() => {});
+        } catch (_) {}
+      } else {
+        // Host leaves or match forfeit
+        tictactoeSocket.sendRoomEvent(sessionId, {
+          type: 'MATCH_DISBANDED',
+          leaverName: playerName,
+          message: `${playerName} left the match.`,
+        });
+      }
     }
     tictactoeSocket.disconnect();
     setView('LOBBY');

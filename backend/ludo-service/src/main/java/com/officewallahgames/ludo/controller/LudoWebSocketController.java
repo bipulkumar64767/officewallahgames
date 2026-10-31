@@ -38,6 +38,14 @@ public class LudoWebSocketController {
         ludoService.moveToken(sessionId, request);
     }
 
+    @MessageMapping("/ludo/{sessionId}/leave")
+    public void leaveRoom(@DestinationVariable String sessionId, Map<String, Object> payload) {
+        String playerId = payload != null && payload.get("playerId") != null
+                ? payload.get("playerId").toString()
+                : null;
+        ludoService.leaveRoom(sessionId, playerId);
+    }
+
     @MessageMapping("/ludo/{sessionId}/disband")
     public void handleDisband(
             @DestinationVariable String sessionId,

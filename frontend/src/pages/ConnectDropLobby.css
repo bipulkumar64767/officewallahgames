@@ -165,13 +165,14 @@
 }
 
 .hero-title {
-  font-size: 2.75rem;
+  font-size: clamp(1.8rem, 5vw, 2.75rem);
   font-weight: 800;
   margin: 0 0 0.5rem 0;
   letter-spacing: -0.5px;
-  background: linear-gradient(90deg, #ffffff, #00f2fe, #fddb3a, #ff4b5c);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
+  color: #ffffff;
+  text-shadow: 0 0 20px rgba(0, 242, 254, 0.45);
+  line-height: 1.25;
+  display: block;
 }
 
 .hero-tagline {

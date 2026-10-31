@@ -160,34 +160,65 @@ public class TicTacToeService {
     }
 
     /**
-     * Disbands a room, marks session as ABANDONED, removes roomCode from mapping,
-     * and broadcasts MATCH_DISBANDED to all connected clients.
+     * Handles player leaving. If host leaves or match is ACTIVE, disbands the match.
+     * If guest (player O) leaves during WAITING_FOR_OPPONENT, frees up player O slot,
+     * resets ready state, and broadcasts PLAYER_LEFT so a new challenger can join.
      */
-    public void disbandRoom(String sessionId, String playerId) {
+    public void leaveRoom(String sessionId, String playerId) {
         GameSession session = sessionsById.get(sessionId);
         if (session == null) {
-            log.warn("Cannot disband non-existent session {}", sessionId);
+            log.warn("Cannot leave non-existent session {}", sessionId);
             return;
         }
 
         synchronized (session) {
-            session.setStatus(GameStatus.ABANDONED);
-            session.setUpdatedAt(Instant.now());
-            if (session.getRoomCode() != null) {
-                roomCodeToSessionId.remove(session.getRoomCode());
+            boolean isHost = playerId != null && playerId.equals(session.getPlayerX());
+
+            if (session.getStatus() == GameStatus.ACTIVE || isHost) {
+                session.setStatus(GameStatus.ABANDONED);
+                session.setUpdatedAt(Instant.now());
+                if (session.getRoomCode() != null) {
+                    roomCodeToSessionId.remove(session.getRoomCode());
+                }
+                GameEventDto event = GameEventDto.builder()
+                        .eventType("MATCH_DISBANDED")
+                        .type("MATCH_DISBANDED")
+                        .session(session)
+                        .sessionId(sessionId)
+                        .message((isHost ? "Host" : "Opponent") + " has left the match.")
+                        .build();
+                messagingTemplate.convertAndSend("/topic/game/" + session.getSessionId(), event);
+                log.info("TicTacToe room {} disbanded as {} left.", session.getRoomCode(), isHost ? "host" : "guest during match");
+                return;
+            }
+
+            // In waiting room: guest leaves, free up player O slot!
+            if (playerId != null && playerId.equals(session.getPlayerO())) {
+                String leavingName = session.getPlayerOName() != null ? session.getPlayerOName() : "Guest";
+                session.setPlayerO(null);
+                session.setPlayerOName(null);
+                session.setStatus(GameStatus.WAITING_FOR_OPPONENT);
+                session.setUpdatedAt(Instant.now());
+
+                GameEventDto event = GameEventDto.builder()
+                        .eventType("PLAYER_LEFT")
+                        .type("PLAYER_LEFT")
+                        .session(session)
+                        .sessionId(sessionId)
+                        .message(leavingName + " has left the room. Slot is now free for a new challenger!")
+                        .build();
+                messagingTemplate.convertAndSend("/topic/game/" + session.getSessionId(), event);
+                log.info("Player O {} left room {}, slot freed for next challenger", playerId, session.getRoomCode());
             }
         }
+    }
 
-        GameEventDto event = GameEventDto.builder()
-                .eventType("MATCH_DISBANDED")
-                .type("MATCH_DISBANDED")
-                .message("A player has left or disbanded the room.")
-                .sessionId(sessionId)
-                .session(session)
-                .build();
-
-        messagingTemplate.convertAndSend("/topic/game/" + sessionId, event);
-        log.info("Room {} (sessionId: {}) disbanded by player {}", session.getRoomCode(), sessionId, playerId);
+    /**
+     * Disbands a room, marks session as ABANDONED, removes roomCode from mapping,
+     * and broadcasts MATCH_DISBANDED to all connected clients.
+     */
+    public void disbandRoom(String sessionId, String playerId) {
+        leaveRoom(sessionId, playerId);
     }
 
     /**
