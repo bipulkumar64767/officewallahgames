@@ -94,7 +94,7 @@ class WordGridServiceTest {
 
         assertThatThrownBy(() -> service.joinRoom(thirdPlayer))
                 .isInstanceOf(GameException.class)
-                .hasMessageContaining("already started");
+                .hasMessageContaining("full");
     }
 
     @Test
@@ -112,7 +112,7 @@ class WordGridServiceTest {
 
         assertThatThrownBy(() -> service.getRoomStatus("INVALID-CODE"))
                 .isInstanceOf(GameException.class)
-                .hasMessageContaining("Room not found");
+                .hasMessageContaining("does not exist");
     }
 
     @Test

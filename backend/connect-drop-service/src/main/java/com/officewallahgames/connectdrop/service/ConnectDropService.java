@@ -121,14 +121,7 @@ public class ConnectDropService {
             session.setUpdatedAt(Instant.now());
         }
 
-        // Broadcast PLAYER_JOINED and ROOM_READY events
-        ConnectDropEventDto joinEvent = ConnectDropEventDto.builder()
-                .eventType("PLAYER_JOINED")
-                .session(session)
-                .message(session.getPlayerYellowName() + " joined the game!")
-                .build();
-        messagingTemplate.convertAndSend("/topic/connectdrop/" + session.getSessionId(), joinEvent);
-
+        // Broadcast ROOM_READY event
         ConnectDropEventDto event = ConnectDropEventDto.builder()
                 .eventType("ROOM_READY")
                 .session(session)
@@ -236,7 +229,7 @@ public class ConnectDropService {
         String eventType;
         String message;
         if (result.isWin()) {
-            session.setStatus(GameStatus.COMPLETED);
+            session.setStatus(GameStatus.GAME_OVER);
             roomCodeToSessionId.remove(session.getRoomCode());
             log.info("ConnectDrop room {} marked as completed and expired/deleted internally.", session.getRoomCode());
             eventType = "GAME_OVER";
@@ -244,7 +237,7 @@ public class ConnectDropService {
                     (result.getColor() == DiscColor.RED ? session.getPlayerRedName() : session.getPlayerYellowName()) +
                     ") wins the game!";
         } else if (result.isDraw()) {
-            session.setStatus(GameStatus.COMPLETED);
+            session.setStatus(GameStatus.GAME_OVER);
             roomCodeToSessionId.remove(session.getRoomCode());
             log.info("ConnectDrop room {} marked as completed and expired/deleted internally.", session.getRoomCode());
             eventType = "DRAW";

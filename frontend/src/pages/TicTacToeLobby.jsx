@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { useSearchParams, Link } from 'react-router-dom';
+import { useSearchParams, Link, useNavigate } from 'react-router-dom';
 import confetti from 'canvas-confetti';
 import { useAuth } from '../context/AuthContext';
 import { getPlayerIdentity } from '../utils/playerIdentity';
@@ -10,6 +10,150 @@ import {
 } from '../services/tictactoeApi';
 import { tictactoeSocket } from '../services/tictactoeSocket';
 import './TicTacToeLobby.css';
+
+// Sound Synthesizer via Web Audio API
+class SoundSynthesizer {
+  constructor() {
+    this.ctx = null;
+    this.enabled = true;
+  }
+
+  getAudioContext() {
+    if (!this.ctx && typeof window !== 'undefined') {
+      const AudioCtx = window.AudioContext || window.webkitAudioContext;
+      if (AudioCtx) {
+        this.ctx = new AudioCtx();
+      }
+    }
+    if (this.ctx && this.ctx.state === 'suspended') {
+      this.ctx.resume().catch(() => {});
+    }
+    return this.ctx;
+  }
+
+  playMoveSound(symbol) {
+    if (!this.enabled) return;
+    const ctx = this.getAudioContext();
+    if (!ctx) return;
+
+    try {
+      const now = ctx.currentTime;
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+
+      if (symbol === 'X') {
+        // High bright pleasant chime (659.25Hz -> 987.77Hz)
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(659.25, now);
+        osc.frequency.exponentialRampToValueAtTime(987.77, now + 0.12);
+        gain.gain.setValueAtTime(0.18, now);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.18);
+        osc.start(now);
+        osc.stop(now + 0.18);
+      } else {
+        // Low warm wooden chime / tap (329.63Hz -> 220Hz)
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(329.63, now);
+        osc.frequency.exponentialRampToValueAtTime(220.0, now + 0.15);
+        gain.gain.setValueAtTime(0.22, now);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.2);
+        osc.start(now);
+        osc.stop(now + 0.2);
+      }
+    } catch (e) {
+      console.warn('Move sound error:', e);
+    }
+  }
+
+  playTurnTickSound() {
+    if (!this.enabled) return;
+    const ctx = this.getAudioContext();
+    if (!ctx) return;
+
+    try {
+      const now = ctx.currentTime;
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(880, now);
+      osc.frequency.exponentialRampToValueAtTime(440, now + 0.05);
+
+      gain.gain.setValueAtTime(0.12, now);
+      gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.05);
+
+      osc.start(now);
+      osc.stop(now + 0.05);
+    } catch (e) {
+      console.warn('Tick sound error:', e);
+    }
+  }
+
+  playMatchStartSound() {
+    if (!this.enabled) return;
+    const ctx = this.getAudioContext();
+    if (!ctx) return;
+
+    try {
+      const now = ctx.currentTime;
+      const freqs = [329.63, 440.0, 554.37, 659.25];
+      freqs.forEach((f, i) => {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+
+        osc.type = 'triangle';
+        osc.frequency.value = f;
+
+        const start = now + i * 0.07;
+        gain.gain.setValueAtTime(0.15, start);
+        gain.gain.exponentialRampToValueAtTime(0.001, start + 0.2);
+
+        osc.start(start);
+        osc.stop(start + 0.22);
+      });
+    } catch (e) {
+      console.warn('Match start sound error:', e);
+    }
+  }
+
+  playWinFanfare() {
+    if (!this.enabled) return;
+    const ctx = this.getAudioContext();
+    if (!ctx) return;
+
+    try {
+      const now = ctx.currentTime;
+      const freqs = [523.25, 659.25, 783.99, 1046.5];
+      freqs.forEach((f, i) => {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+
+        osc.type = 'triangle';
+        osc.frequency.value = f;
+
+        const start = now + i * 0.12;
+        const dur = i === freqs.length - 1 ? 0.6 : 0.25;
+        gain.gain.setValueAtTime(0.2, start);
+        gain.gain.exponentialRampToValueAtTime(0.001, start + dur);
+
+        osc.start(start);
+        osc.stop(start + dur);
+      });
+    } catch (e) {
+      console.warn('Win fanfare error:', e);
+    }
+  }
+}
+
+const soundManager = new SoundSynthesizer();
 
 const INITIAL_BOARD = Array(9).fill('');
 
@@ -26,7 +170,9 @@ const REALISTIC_BOT_NAMES = [
 
 const TicTacToeLobby = () => {
   const { user } = useAuth();
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const navigate = useNavigate();
+  const hasAutoJoinedRef = useRef(false);
 
   // Active view: 'LOBBY' | 'WAITING_ROOM' | 'PLAYING'
   const [view, setView] = useState('LOBBY');
@@ -47,6 +193,18 @@ const TicTacToeLobby = () => {
   const [playerOName, setPlayerOName] = useState('Player O');
   const [isAiOpponent, setIsAiOpponent] = useState(false);
   const [showExitConfirmModal, setShowExitConfirmModal] = useState(false);
+
+  // Sound & WebRTC Voice State
+  const [soundEnabled, setSoundEnabled] = useState(true);
+  const [isMatchDisbanded, setIsMatchDisbanded] = useState(false);
+  const [disbandMessage, setDisbandMessage] = useState('');
+  const [isVoiceJoined, setIsVoiceJoined] = useState(false);
+  const [isMicMuted, setIsMicMuted] = useState(false);
+  const [isDeafened, setIsDeafened] = useState(false);
+  const [isSelfSpeaking, setIsSelfSpeaking] = useState(false);
+  const [isOpponentSpeaking, setIsOpponentSpeaking] = useState(false);
+  const [peerVoiceJoined, setPeerVoiceJoined] = useState(false);
+  const [voiceLoading, setVoiceLoading] = useState(false);
 
   // Quick match countdown
   const [isSearching, setIsSearching] = useState(false);
@@ -70,7 +228,7 @@ const TicTacToeLobby = () => {
   const playerId = playerIdentity.playerId;
   const playerName = playerIdentity.playerName;
 
-  // State refs for async callbacks & websockets
+  // State refs for async callbacks, audio & websockets
   const boardRef = useRef(board);
   const currentTurnRef = useRef(currentTurn);
   const isGameOverRef = useRef(isGameOver);
@@ -81,7 +239,21 @@ const TicTacToeLobby = () => {
   const playerNameRef = useRef(playerName);
   const viewRef = useRef(view);
   const searchTimerRef = useRef(null);
-  const hasAutoJoinedRef = useRef(false);
+
+  // WebRTC refs
+  const localStreamRef = useRef(null);
+  const peerConnectionRef = useRef(null);
+  const remoteAudioRef = useRef(null);
+  const localAudioCtxRef = useRef(null);
+  const localAnalyserRef = useRef(null);
+  const remoteAudioCtxRef = useRef(null);
+  const remoteAnalyserRef = useRef(null);
+  const pendingCandidatesRef = useRef([]);
+  const isVoiceJoinedRef = useRef(isVoiceJoined);
+  const isMicMutedRef = useRef(isMicMuted);
+  const isDeafenedRef = useRef(isDeafened);
+  const peerVoiceJoinedRef = useRef(peerVoiceJoined);
+  const isAiOpponentRef = useRef(isAiOpponent);
 
   useEffect(() => {
     boardRef.current = board;
@@ -93,7 +265,329 @@ const TicTacToeLobby = () => {
     playerIdRef.current = playerId;
     playerNameRef.current = playerName;
     viewRef.current = view;
-  }, [board, currentTurn, isGameOver, mySymbol, isHost, sessionId, playerId, playerName, view]);
+    isVoiceJoinedRef.current = isVoiceJoined;
+    isMicMutedRef.current = isMicMuted;
+    isDeafenedRef.current = isDeafened;
+    peerVoiceJoinedRef.current = peerVoiceJoined;
+    isAiOpponentRef.current = isAiOpponent;
+  }, [
+    board,
+    currentTurn,
+    isGameOver,
+    mySymbol,
+    isHost,
+    sessionId,
+    playerId,
+    playerName,
+    view,
+    isVoiceJoined,
+    isMicMuted,
+    isDeafened,
+    peerVoiceJoined,
+    isAiOpponent,
+  ]);
+
+  // WebRTC Voice Methods
+  const setupSpeakingDetection = useCallback((stream, isLocal) => {
+    try {
+      const AudioCtx = window.AudioContext || window.webkitAudioContext;
+      if (!AudioCtx) return;
+      const ctx = new AudioCtx();
+      const source = ctx.createMediaStreamSource(stream);
+      const analyser = ctx.createAnalyser();
+      analyser.fftSize = 256;
+      analyser.smoothingTimeConstant = 0.5;
+      source.connect(analyser);
+
+      if (isLocal) {
+        localAudioCtxRef.current = ctx;
+        localAnalyserRef.current = analyser;
+      } else {
+        remoteAudioCtxRef.current = ctx;
+        remoteAnalyserRef.current = analyser;
+      }
+    } catch (err) {
+      console.warn('Audio analyser setup error:', err);
+    }
+  }, []);
+
+  const cleanupVoice = useCallback(() => {
+    if (localStreamRef.current) {
+      localStreamRef.current.getTracks().forEach((track) => track.stop());
+      localStreamRef.current = null;
+    }
+    if (peerConnectionRef.current) {
+      peerConnectionRef.current.close();
+      peerConnectionRef.current = null;
+    }
+    if (localAudioCtxRef.current) {
+      try {
+        localAudioCtxRef.current.close();
+      } catch {}
+      localAudioCtxRef.current = null;
+    }
+    if (remoteAudioCtxRef.current) {
+      try {
+        remoteAudioCtxRef.current.close();
+      } catch {}
+      remoteAudioCtxRef.current = null;
+    }
+    localAnalyserRef.current = null;
+    remoteAnalyserRef.current = null;
+    pendingCandidatesRef.current = [];
+    setIsVoiceJoined(false);
+    setIsMicMuted(false);
+    setIsDeafened(false);
+    setIsSelfSpeaking(false);
+    setIsOpponentSpeaking(false);
+    isVoiceJoinedRef.current = false;
+  }, []);
+
+  const getOrCreatePeerConnection = useCallback(() => {
+    if (peerConnectionRef.current) {
+      return peerConnectionRef.current;
+    }
+
+    const pc = new RTCPeerConnection({
+      iceServers: [
+        { urls: 'stun:stun.l.google.com:19302' },
+        { urls: 'stun:stun1.l.google.com:19302' },
+        { urls: 'stun:stun2.l.google.com:19302' },
+      ],
+    });
+
+    if (localStreamRef.current) {
+      localStreamRef.current.getTracks().forEach((track) => {
+        pc.addTrack(track, localStreamRef.current);
+      });
+    }
+
+    pc.onicecandidate = (event) => {
+      if (event.candidate && sessionIdRef.current) {
+        tictactoeSocket.sendRoomEvent(sessionIdRef.current, {
+          type: 'WEBRTC_SIGNAL',
+          signalType: 'ICE_CANDIDATE',
+          candidate: event.candidate,
+          senderId: playerIdRef.current,
+        });
+      }
+    };
+
+    pc.ontrack = (event) => {
+      const remoteStream = event.streams[0];
+      if (remoteAudioRef.current) {
+        remoteAudioRef.current.srcObject = remoteStream;
+        remoteAudioRef.current.muted = isDeafenedRef.current;
+        remoteAudioRef.current.play().catch(() => {});
+      }
+      setupSpeakingDetection(remoteStream, false);
+    };
+
+    peerConnectionRef.current = pc;
+    return pc;
+  }, [setupSpeakingDetection]);
+
+  const initiateWebRtcCall = useCallback(async () => {
+    try {
+      const pc = getOrCreatePeerConnection();
+      const offer = await pc.createOffer();
+      await pc.setLocalDescription(offer);
+      tictactoeSocket.sendRoomEvent(sessionIdRef.current, {
+        type: 'WEBRTC_SIGNAL',
+        signalType: 'OFFER',
+        offer: pc.localDescription,
+        senderId: playerIdRef.current,
+      });
+    } catch (err) {
+      console.error('Failed to create WebRTC offer:', err);
+    }
+  }, [getOrCreatePeerConnection]);
+
+  const handleWebRtcSignal = useCallback(
+    async (payload) => {
+      const { signalType, offer, answer, candidate } = payload;
+
+      if (signalType === 'VOICE_JOINED') {
+        setPeerVoiceJoined(true);
+        setStatusMessage('🎙️ Challenger joined voice chat!');
+        if (isVoiceJoinedRef.current) {
+          initiateWebRtcCall();
+        }
+      } else if (signalType === 'VOICE_LEFT') {
+        setPeerVoiceJoined(false);
+        setIsOpponentSpeaking(false);
+        if (peerConnectionRef.current) {
+          peerConnectionRef.current.close();
+          peerConnectionRef.current = null;
+        }
+        setStatusMessage('Challenger left voice chat.');
+      } else if (signalType === 'OFFER') {
+        if (!isVoiceJoinedRef.current) return;
+        try {
+          const pc = getOrCreatePeerConnection();
+          await pc.setRemoteDescription(new RTCSessionDescription(offer));
+          while (pendingCandidatesRef.current.length > 0) {
+            const cand = pendingCandidatesRef.current.shift();
+            try {
+              await pc.addIceCandidate(new RTCIceCandidate(cand));
+            } catch (e) {
+              console.warn('Queued candidate failed:', e);
+            }
+          }
+          const createdAnswer = await pc.createAnswer();
+          await pc.setLocalDescription(createdAnswer);
+          tictactoeSocket.sendRoomEvent(sessionIdRef.current, {
+            type: 'WEBRTC_SIGNAL',
+            signalType: 'ANSWER',
+            answer: pc.localDescription,
+            senderId: playerIdRef.current,
+          });
+        } catch (err) {
+          console.error('Error handling WebRTC offer:', err);
+        }
+      } else if (signalType === 'ANSWER') {
+        if (peerConnectionRef.current) {
+          try {
+            await peerConnectionRef.current.setRemoteDescription(new RTCSessionDescription(answer));
+            while (pendingCandidatesRef.current.length > 0) {
+              const cand = pendingCandidatesRef.current.shift();
+              try {
+                await peerConnectionRef.current.addIceCandidate(new RTCIceCandidate(cand));
+              } catch (e) {
+                console.warn('Queued candidate failed:', e);
+              }
+            }
+          } catch (err) {
+            console.error('Error handling WebRTC answer:', err);
+          }
+        }
+      } else if (signalType === 'ICE_CANDIDATE') {
+        if (candidate) {
+          if (peerConnectionRef.current && peerConnectionRef.current.remoteDescription) {
+            try {
+              await peerConnectionRef.current.addIceCandidate(new RTCIceCandidate(candidate));
+            } catch (e) {
+              console.warn('Error adding ICE candidate:', e);
+            }
+          } else {
+            pendingCandidatesRef.current.push(candidate);
+          }
+        }
+      }
+    },
+    [getOrCreatePeerConnection, initiateWebRtcCall]
+  );
+
+  const joinVoiceChat = async () => {
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      setStatusMessage('⚠️ WebRTC Audio is not supported in this browser environment.');
+      return;
+    }
+
+    try {
+      setVoiceLoading(true);
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+        video: false,
+      });
+      localStreamRef.current = stream;
+      setupSpeakingDetection(stream, true);
+      setIsVoiceJoined(true);
+      isVoiceJoinedRef.current = true;
+      setStatusMessage('🎙️ Connected to room voice chat!');
+
+      tictactoeSocket.sendRoomEvent(sessionIdRef.current, {
+        type: 'WEBRTC_SIGNAL',
+        signalType: 'VOICE_JOINED',
+        senderId: playerIdRef.current,
+      });
+
+      if (peerVoiceJoinedRef.current) {
+        initiateWebRtcCall();
+      }
+    } catch (err) {
+      console.error('Mic access error:', err);
+      setStatusMessage('⚠️ Microphone access was denied or not found.');
+    } finally {
+      setVoiceLoading(false);
+    }
+  };
+
+  const leaveVoiceChat = () => {
+    cleanupVoice();
+    setStatusMessage('Left room voice chat.');
+    if (sessionIdRef.current) {
+      tictactoeSocket.sendRoomEvent(sessionIdRef.current, {
+        type: 'WEBRTC_SIGNAL',
+        signalType: 'VOICE_LEFT',
+        senderId: playerIdRef.current,
+      });
+    }
+  };
+
+  const toggleMute = () => {
+    const nextMuted = !isMicMuted;
+    setIsMicMuted(nextMuted);
+    isMicMutedRef.current = nextMuted;
+    if (localStreamRef.current) {
+      localStreamRef.current.getAudioTracks().forEach((track) => {
+        track.enabled = !nextMuted;
+      });
+    }
+    if (nextMuted) {
+      setIsSelfSpeaking(false);
+    }
+  };
+
+  const toggleDeafen = () => {
+    const nextDeafened = !isDeafened;
+    setIsDeafened(nextDeafened);
+    isDeafenedRef.current = nextDeafened;
+    if (remoteAudioRef.current) {
+      remoteAudioRef.current.muted = nextDeafened;
+    }
+  };
+
+  const toggleSound = () => {
+    const next = !soundEnabled;
+    setSoundEnabled(next);
+    soundManager.enabled = next;
+  };
+
+  // Speaking Detection volume polling
+  useEffect(() => {
+    if (!isVoiceJoined) {
+      setIsSelfSpeaking(false);
+      setIsOpponentSpeaking(false);
+      return;
+    }
+
+    const interval = setInterval(() => {
+      if (localAnalyserRef.current && !isMicMutedRef.current) {
+        const data = new Uint8Array(localAnalyserRef.current.frequencyBinCount);
+        localAnalyserRef.current.getByteFrequencyData(data);
+        let sum = 0;
+        for (let i = 0; i < data.length; i++) sum += data[i];
+        const avg = sum / data.length;
+        setIsSelfSpeaking(avg > 15);
+      } else {
+        setIsSelfSpeaking(false);
+      }
+
+      if (remoteAnalyserRef.current && !isDeafenedRef.current) {
+        const data = new Uint8Array(remoteAnalyserRef.current.frequencyBinCount);
+        remoteAnalyserRef.current.getByteFrequencyData(data);
+        let sum = 0;
+        for (let i = 0; i < data.length; i++) sum += data[i];
+        const avg = sum / data.length;
+        setIsOpponentSpeaking(avg > 15);
+      } else {
+        setIsOpponentSpeaking(false);
+      }
+    }, 100);
+
+    return () => clearInterval(interval);
+  }, [isVoiceJoined]);
 
   // Handle Confetti Celebration
   const triggerCelebration = useCallback(() => {
@@ -118,6 +612,7 @@ const TicTacToeLobby = () => {
 
       if (winResult.winner === mySymbolRef.current) {
         triggerCelebration();
+        soundManager.playWinFanfare();
         setStatusMessage('🎉 VICTORY! You won the match!');
       } else if (winResult.winner === 'DRAW') {
         setStatusMessage("🤝 STALEMATE! It's a draw!");
@@ -134,6 +629,7 @@ const TicTacToeLobby = () => {
       if (isGameOverRef.current) return;
       const bestMove = computeBestAIMove(currentBoard, aiSym);
       if (bestMove !== null && bestMove !== undefined) {
+        soundManager.playMoveSound(aiSym);
         const nextBoard = [...currentBoard];
         nextBoard[bestMove] = aiSym;
         setBoard(nextBoard);
@@ -210,6 +706,7 @@ const TicTacToeLobby = () => {
           );
         }
       } else if (eventType === 'START_MATCH') {
+        soundManager.playMatchStartSound();
         // Transition both host and guest immediately into PLAYING
         setBoard(INITIAL_BOARD);
         setCurrentTurn('X');
@@ -227,6 +724,9 @@ const TicTacToeLobby = () => {
         if (payload.playerId && payload.playerId === playerIdRef.current) {
           return; // Skip own broadcast echo
         }
+
+        const moveSym = payload.symbol || (currentTurnRef.current === 'X' ? 'X' : 'O');
+        soundManager.playMoveSound(moveSym);
 
         let updatedBoard = null;
         if (serverBoard && Array.isArray(serverBoard)) {
@@ -255,6 +755,38 @@ const TicTacToeLobby = () => {
         } else {
           setCurrentTurn((prev) => (prev === 'X' ? 'O' : 'X'));
         }
+      } else if (eventType === 'TURN_CHANGED') {
+        const next = payload.nextTurn || (currentTurnRef.current === 'X' ? 'O' : 'X');
+        setCurrentTurn(next);
+        setTurnTimer(payload.turnTimer !== undefined ? payload.turnTimer : 30);
+        setStatusMessage(`⏱️ Turn changed to Player ${next}.`);
+      } else if (eventType === 'PLAYER_RECONNECTED') {
+        setStatusMessage('Player reconnected!');
+        if (payload.session) {
+          if (payload.session.board) {
+            setBoard(payload.session.board.map((c) => (c ? String(c).trim() : '')));
+          }
+          if (payload.session.currentTurn) {
+            setCurrentTurn(payload.session.currentTurn);
+          }
+          if (payload.session.turnTimer !== undefined) {
+            setTurnTimer(payload.session.turnTimer);
+          }
+        } else {
+          if (payload.board) setBoard(payload.board);
+          if (payload.currentTurn) setCurrentTurn(payload.currentTurn);
+          if (payload.turnTimer !== undefined) setTurnTimer(payload.turnTimer);
+        }
+      } else if (eventType === 'MATCH_DISBANDED') {
+        if (payload.leaverName && payload.leaverName === playerNameRef.current) {
+          return;
+        }
+        setIsMatchDisbanded(true);
+        setDisbandMessage(payload.message || `${payload.leaverName || 'Opponent'} left the match.`);
+        setStatusMessage(`⚠️ ${payload.leaverName || 'Opponent'} left the match.`);
+      } else if (eventType === 'WEBRTC_SIGNAL') {
+        if (payload.senderId === playerIdRef.current) return;
+        handleWebRtcSignal(payload);
       } else if (eventType === 'GAME_OVER') {
         handleGameOver({
           winner: payload.winner || session.winner,
@@ -270,7 +802,7 @@ const TicTacToeLobby = () => {
         restartGame();
       }
     },
-    [handleGameOver, restartGame]
+    [handleGameOver, restartGame, handleWebRtcSignal]
   );
 
   // Turn Countdown Timer (30s)
@@ -281,8 +813,27 @@ const TicTacToeLobby = () => {
 
     const interval = setInterval(() => {
       setTurnTimer((prev) => {
+        if (prev <= 6 && prev > 1) {
+          soundManager.playTurnTickSound();
+        }
+
         if (prev <= 1) {
-          setCurrentTurn((curr) => (curr === 'X' ? 'O' : 'X'));
+          const nextTurn = currentTurnRef.current === 'X' ? 'O' : 'X';
+
+          if (!isAiOpponentRef.current && sessionIdRef.current) {
+            tictactoeSocket.sendRoomEvent(sessionIdRef.current, {
+              type: 'TURN_CHANGED',
+              nextTurn,
+              turnTimer: 30,
+            });
+          }
+
+          setCurrentTurn(nextTurn);
+
+          if (isAiOpponentRef.current && nextTurn === 'O') {
+            scheduleAiMove(boardRef.current, 'O');
+          }
+
           return 30;
         }
         return prev - 1;
@@ -290,17 +841,30 @@ const TicTacToeLobby = () => {
     }, 1000);
 
     return () => clearInterval(interval);
-  }, [view, isGameOver, currentTurn]);
+  }, [view, isGameOver, scheduleAiMove]);
 
   // Cleanup on unmount
   useEffect(() => {
+    const handleBeforeUnload = () => {
+      if (!isAiOpponentRef.current && sessionIdRef.current) {
+        tictactoeSocket.sendRoomEvent(sessionIdRef.current, {
+          type: 'MATCH_DISBANDED',
+          leaverName: playerNameRef.current,
+          message: `${playerNameRef.current} left the match.`,
+        });
+      }
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+
     return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+      cleanupVoice();
       if (searchTimerRef.current) {
         clearInterval(searchTimerRef.current);
       }
       tictactoeSocket.disconnect();
     };
-  }, []);
+  }, [cleanupVoice]);
 
   // Quick Match: Pair with simulated realistic player
   const pairWithSimulatedPlayer = useCallback(() => {
@@ -323,6 +887,7 @@ const TicTacToeLobby = () => {
     setIsGameOver(false);
     setWinner(null);
     setWinningPattern(null);
+    soundManager.playMatchStartSound();
     setView('PLAYING');
     setStatusMessage(`Challenger found: ${botName}! Your move (X).`);
   }, [playerName]);
@@ -476,6 +1041,7 @@ const TicTacToeLobby = () => {
   // Host starts match (only enabled if opponentJoined && opponentReady)
   const handleHostStartMatch = () => {
     if (!opponentJoined || !opponentReady) return;
+    soundManager.playMatchStartSound();
     tictactoeSocket.sendStartMatch(sessionId);
     // Transition Host immediately to avoid network delay
     setBoard(INITIAL_BOARD);
@@ -493,6 +1059,8 @@ const TicTacToeLobby = () => {
     if (view !== 'PLAYING' || isGameOver) return;
     if (board[index] && board[index].trim() !== '') return;
     if (currentTurn !== mySymbol) return;
+
+    soundManager.playMoveSound(mySymbol);
 
     const newBoard = [...board];
     newBoard[index] = mySymbol;
@@ -539,16 +1107,25 @@ const TicTacToeLobby = () => {
 
   // Return to Lobby
   const returnToLobby = () => {
+    hasAutoJoinedRef.current = true;
+    try {
+      setSearchParams({}, { replace: true });
+    } catch (e) {
+      console.warn('Failed to clear searchParams', e);
+    }
     setShowExitConfirmModal(false);
+    setIsMatchDisbanded(false);
+    cleanupVoice();
+
     if (searchTimerRef.current) {
       clearInterval(searchTimerRef.current);
       searchTimerRef.current = null;
     }
-    if (!isAiOpponent && sessionId && view === 'PLAYING' && !isGameOver) {
+    if (!isAiOpponent && sessionId) {
       tictactoeSocket.sendRoomEvent(sessionId, {
-        type: 'MATCH_FORFEITED',
-        eventType: 'MATCH_FORFEITED',
-        forfeiter: playerName,
+        type: 'MATCH_DISBANDED',
+        leaverName: playerName,
+        message: `${playerName} left the match.`,
       });
     }
     tictactoeSocket.disconnect();
@@ -568,6 +1145,22 @@ const TicTacToeLobby = () => {
     setIsAiOpponent(false);
     setStatusMessage('');
   };
+
+  const exitToHome = () => {
+    returnToLobby();
+    navigate('/', { replace: true });
+  };
+
+  // Android hardware back button handler
+  useEffect(() => {
+    const handlePopState = () => {
+      if (view === 'PLAYING' || view === 'WAITING_ROOM') {
+        returnToLobby();
+      }
+    };
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, [view]);
 
   // Copy shareable URL
   const copyShareableLink = () => {
@@ -602,9 +1195,18 @@ const TicTacToeLobby = () => {
   };
 
   const isMyTurn = currentTurn === mySymbol && !isGameOver;
+  const isPlayerXSpeaking =
+    (mySymbol === 'X' && isSelfSpeaking) ||
+    (mySymbol === 'O' && isOpponentSpeaking);
+  const isPlayerOSpeaking =
+    (mySymbol === 'O' && isSelfSpeaking) ||
+    (mySymbol === 'X' && isOpponentSpeaking);
 
   return (
     <div className="tictactoe-lobby-container">
+      {/* Remote Audio Element for WebRTC */}
+      <audio ref={remoteAudioRef} autoPlay playsInline style={{ display: 'none' }} />
+
       {/* Navigation Breadcrumb */}
       <nav className="lobby-breadcrumb" aria-label="Breadcrumb">
         <Link to="/">Home</Link>
@@ -795,6 +1397,54 @@ const TicTacToeLobby = () => {
                   )}
                 </div>
 
+                {/* Host Voice Controls */}
+                {!isAiOpponent && sessionId && (
+                  <div className="waiting-voice-bar">
+                    {!isVoiceJoined ? (
+                      <button
+                        type="button"
+                        className="hud-tool-btn voice-join-btn"
+                        onClick={joinVoiceChat}
+                        disabled={voiceLoading}
+                      >
+                        {voiceLoading ? '⏳ Connecting...' : '🎙️ Join Room Voice Chat'}
+                      </button>
+                    ) : (
+                      <div className="voice-active-wrap">
+                        <span className="voice-status-pill">
+                          <span className="voice-live-dot"></span> Voice Connected
+                        </span>
+                        <button
+                          type="button"
+                          className={`hud-tool-btn mic-btn ${isMicMuted ? 'btn-danger' : 'btn-active'}`}
+                          onClick={toggleMute}
+                          title={isMicMuted ? 'Unmute Mic' : 'Mute Mic'}
+                        >
+                          {isMicMuted ? '🔇 Muted' : '🎙️ Mic ON'}
+                        </button>
+                        <button
+                          type="button"
+                          className={`hud-tool-btn deafen-btn ${isDeafened ? 'btn-danger' : 'btn-active'}`}
+                          onClick={toggleDeafen}
+                          title={isDeafened ? 'Undeafen Speaker' : 'Deafen Speaker'}
+                        >
+                          {isDeafened ? '🔈 Deafened' : '🔊 Deafen'}
+                        </button>
+                        <button
+                          type="button"
+                          className="hud-tool-btn voice-leave-btn"
+                          onClick={leaveVoiceChat}
+                        >
+                          ❌ Leave
+                        </button>
+                      </div>
+                    )}
+                    {peerVoiceJoined && !isVoiceJoined && (
+                      <span className="peer-voice-pill">Challenger joined voice!</span>
+                    )}
+                  </div>
+                )}
+
                 {/* Host Actions */}
                 <div className="waiting-actions">
                   <button
@@ -852,6 +1502,54 @@ const TicTacToeLobby = () => {
                   </p>
                 </div>
 
+                {/* Guest Voice Controls */}
+                {!isAiOpponent && sessionId && (
+                  <div className="waiting-voice-bar">
+                    {!isVoiceJoined ? (
+                      <button
+                        type="button"
+                        className="hud-tool-btn voice-join-btn"
+                        onClick={joinVoiceChat}
+                        disabled={voiceLoading}
+                      >
+                        {voiceLoading ? '⏳ Connecting...' : '🎙️ Join Room Voice Chat'}
+                      </button>
+                    ) : (
+                      <div className="voice-active-wrap">
+                        <span className="voice-status-pill">
+                          <span className="voice-live-dot"></span> Voice Connected
+                        </span>
+                        <button
+                          type="button"
+                          className={`hud-tool-btn mic-btn ${isMicMuted ? 'btn-danger' : 'btn-active'}`}
+                          onClick={toggleMute}
+                          title={isMicMuted ? 'Unmute Mic' : 'Mute Mic'}
+                        >
+                          {isMicMuted ? '🔇 Muted' : '🎙️ Mic ON'}
+                        </button>
+                        <button
+                          type="button"
+                          className={`hud-tool-btn deafen-btn ${isDeafened ? 'btn-danger' : 'btn-active'}`}
+                          onClick={toggleDeafen}
+                          title={isDeafened ? 'Undeafen Speaker' : 'Deafen Speaker'}
+                        >
+                          {isDeafened ? '🔈 Deafened' : '🔊 Deafen'}
+                        </button>
+                        <button
+                          type="button"
+                          className="hud-tool-btn voice-leave-btn"
+                          onClick={leaveVoiceChat}
+                        >
+                          ❌ Leave
+                        </button>
+                      </div>
+                    )}
+                    {peerVoiceJoined && !isVoiceJoined && (
+                      <span className="peer-voice-pill">Host joined voice!</span>
+                    )}
+                  </div>
+                )}
+
                 <div className="waiting-actions">
                   <button
                     type="button"
@@ -870,22 +1568,100 @@ const TicTacToeLobby = () => {
       {/* ACTIVE GAME VIEW */}
       {view === 'PLAYING' && (
         <div className="gameplay-container">
+          {/* HUD Bar: Sound & WebRTC Voice Controls */}
+          <div className="game-hud-bar">
+            <div className="hud-left-controls">
+              <button
+                type="button"
+                className={`hud-tool-btn sound-toggle-btn ${!soundEnabled ? 'sound-off' : ''}`}
+                onClick={toggleSound}
+                title="Toggle Game Sound Effects"
+              >
+                {soundEnabled ? '🔊 Sound: ON' : '🔈 Sound: OFF'}
+              </button>
+            </div>
+
+            {!isAiOpponent && sessionId && (
+              <div className="hud-right-controls">
+                {!isVoiceJoined ? (
+                  <div className="voice-unjoined-wrap">
+                    <button
+                      type="button"
+                      className="hud-tool-btn voice-join-btn"
+                      onClick={joinVoiceChat}
+                      disabled={voiceLoading}
+                    >
+                      {voiceLoading ? '⏳ Connecting...' : '🎙️ Voice: Join'}
+                    </button>
+                    {peerVoiceJoined && (
+                      <span className="peer-voice-pill">Challenger in voice!</span>
+                    )}
+                  </div>
+                ) : (
+                  <div className="voice-active-wrap">
+                    <span className="voice-status-pill">
+                      <span className="voice-live-dot"></span> Voice Active
+                    </span>
+                    <button
+                      type="button"
+                      className={`hud-tool-btn mic-btn ${isMicMuted ? 'btn-danger' : 'btn-active'}`}
+                      onClick={toggleMute}
+                      title={isMicMuted ? 'Unmute Mic' : 'Mute Mic'}
+                    >
+                      {isMicMuted ? '🔇 Muted' : '🎙️ Mic ON'}
+                    </button>
+                    <button
+                      type="button"
+                      className={`hud-tool-btn deafen-btn ${isDeafened ? 'btn-danger' : 'btn-active'}`}
+                      onClick={toggleDeafen}
+                      title={isDeafened ? 'Undeafen Speaker' : 'Deafen Speaker'}
+                    >
+                      {isDeafened ? '🔈 Deafened' : '🔊 Deafen'}
+                    </button>
+                    <button
+                      type="button"
+                      className="hud-tool-btn voice-leave-btn"
+                      onClick={leaveVoiceChat}
+                      title="Leave Voice Chat"
+                    >
+                      ❌ Leave
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
           {/* PLAYER HUD */}
           <div className="player-hud">
             {/* Player X Card */}
             <div
               className={`player-card player-x ${
                 currentTurn === 'X' ? 'active-turn' : ''
-              } ${mySymbol === 'X' ? 'is-self' : ''}`}
+              } ${mySymbol === 'X' ? 'is-self' : ''} ${
+                isPlayerXSpeaking ? 'speaking-pulse-glow' : ''
+              }`}
             >
-              <div className="player-avatar-box symbol-x">
+              <div
+                className={`player-avatar-box symbol-x ${
+                  isPlayerXSpeaking ? 'avatar-speaking' : ''
+                }`}
+              >
                 <span>X</span>
+                {isPlayerXSpeaking && (
+                  <span className="speaking-mic-wave" title="Speaking">
+                    🎙️
+                  </span>
+                )}
               </div>
               <div className="player-details">
                 <span className="player-badge">
                   {mySymbol === 'X' ? 'YOU' : 'OPPONENT'}
                 </span>
                 <span className="player-name">{playerXName}</span>
+                {isPlayerXSpeaking && (
+                  <span className="speaking-label">Speaking...</span>
+                )}
               </div>
             </div>
 
@@ -924,16 +1700,30 @@ const TicTacToeLobby = () => {
             <div
               className={`player-card player-o ${
                 currentTurn === 'O' ? 'active-turn' : ''
-              } ${mySymbol === 'O' ? 'is-self' : ''}`}
+              } ${mySymbol === 'O' ? 'is-self' : ''} ${
+                isPlayerOSpeaking ? 'speaking-pulse-glow' : ''
+              }`}
             >
-              <div className="player-avatar-box symbol-o">
+              <div
+                className={`player-avatar-box symbol-o ${
+                  isPlayerOSpeaking ? 'avatar-speaking' : ''
+                }`}
+              >
                 <span>O</span>
+                {isPlayerOSpeaking && (
+                  <span className="speaking-mic-wave" title="Speaking">
+                    🎙️
+                  </span>
+                )}
               </div>
               <div className="player-details">
                 <span className="player-badge">
                   {mySymbol === 'O' ? 'YOU' : 'OPPONENT'}
                 </span>
                 <span className="player-name">{playerOName}</span>
+                {isPlayerOSpeaking && (
+                  <span className="speaking-label">Speaking...</span>
+                )}
               </div>
             </div>
           </div>
@@ -1098,6 +1888,28 @@ const TicTacToeLobby = () => {
               </div>
             </div>
           )}
+        </div>
+      )}
+
+      {/* MATCH DISBANDED MODAL */}
+      {isMatchDisbanded && (
+        <div className="game-over-overlay">
+          <div className="game-over-modal modal-defeat" style={{ maxWidth: '440px', textAlign: 'center' }}>
+            <div className="game-over-icon">⚠️</div>
+            <h2 className="game-over-headline" style={{ color: '#ffaa00' }}>Match Disbanded</h2>
+            <p className="game-over-desc">
+              ⚠️ Match Disbanded: {disbandMessage || 'Opponent left the match.'}
+            </p>
+            <div className="game-over-actions">
+              <button
+                type="button"
+                className="mode-btn btn-neon-cyan"
+                onClick={returnToLobby}
+              >
+                Return to Lobby
+              </button>
+            </div>
+          </div>
         </div>
       )}
 

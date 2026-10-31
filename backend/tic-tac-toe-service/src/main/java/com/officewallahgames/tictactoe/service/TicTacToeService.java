@@ -79,6 +79,7 @@ public class TicTacToeService {
 
     /**
      * Joins an existing game room, assigning opponent as player 'O' and setting status to ACTIVE.
+     * Also supports host and opponent rejoining/reconnecting without error.
      */
     public RoomResponseDto joinRoom(JoinRoomRequest request) {
         if (request == null || request.getRoomCode() == null) {
@@ -98,12 +99,40 @@ public class TicTacToeService {
         }
 
         synchronized (session) {
-            if (session.getStatus() != GameStatus.WAITING_FOR_OPPONENT || session.getPlayerO() != null) {
-                throw new GameException("Room " + roomCode + " is already full! Maximum 2 players allowed.");
+            if (session.getStatus() != GameStatus.COMPLETED && session.getStatus() != GameStatus.ABANDONED) {
+                // Check if host is rejoining / reconnecting
+                if (request.getPlayerId() != null && request.getPlayerId().equals(session.getPlayerX())) {
+                    log.info("Host {} reconnected to room {}", request.getPlayerId(), roomCode);
+                    GameEventDto reconnectEvent = GameEventDto.builder()
+                            .eventType("PLAYER_RECONNECTED")
+                            .type("PLAYER_RECONNECTED")
+                            .playerId(request.getPlayerId())
+                            .symbol("X")
+                            .session(session)
+                            .message(session.getPlayerXName() + " reconnected as Host.")
+                            .build();
+                    messagingTemplate.convertAndSend("/topic/game/" + session.getSessionId(), reconnectEvent);
+                    return buildRoomResponse(session, "X");
+                }
+
+                // Check if Player O is rejoining / reconnecting
+                if (request.getPlayerId() != null && request.getPlayerId().equals(session.getPlayerO())) {
+                    log.info("Player O {} reconnected to room {}", request.getPlayerId(), roomCode);
+                    GameEventDto reconnectEvent = GameEventDto.builder()
+                            .eventType("PLAYER_RECONNECTED")
+                            .type("PLAYER_RECONNECTED")
+                            .playerId(request.getPlayerId())
+                            .symbol("O")
+                            .session(session)
+                            .message(session.getPlayerOName() + " reconnected as Player O.")
+                            .build();
+                    messagingTemplate.convertAndSend("/topic/game/" + session.getSessionId(), reconnectEvent);
+                    return buildRoomResponse(session, "O");
+                }
             }
 
-            if (request.getPlayerId() != null && request.getPlayerId().equals(session.getPlayerX())) {
-                throw new GameException("Host cannot join as opponent. Share the code with another player.");
+            if (session.getStatus() != GameStatus.WAITING_FOR_OPPONENT || session.getPlayerO() != null) {
+                throw new GameException("Room " + roomCode + " is already full! Maximum 2 players allowed.");
             }
 
             String playerName = (request.getPlayerName() != null && !request.getPlayerName().isBlank())
@@ -119,6 +148,7 @@ public class TicTacToeService {
         // Broadcast PLAYER_JOINED event via WebSocket
         GameEventDto event = GameEventDto.builder()
                 .eventType("PLAYER_JOINED")
+                .type("PLAYER_JOINED")
                 .session(session)
                 .message(session.getPlayerOName() + " joined the game!")
                 .build();
@@ -127,6 +157,72 @@ public class TicTacToeService {
         log.info("Player {} joined room {}", request.getPlayerId(), roomCode);
 
         return buildRoomResponse(session, "O");
+    }
+
+    /**
+     * Disbands a room, marks session as ABANDONED, removes roomCode from mapping,
+     * and broadcasts MATCH_DISBANDED to all connected clients.
+     */
+    public void disbandRoom(String sessionId, String playerId) {
+        GameSession session = sessionsById.get(sessionId);
+        if (session == null) {
+            log.warn("Cannot disband non-existent session {}", sessionId);
+            return;
+        }
+
+        synchronized (session) {
+            session.setStatus(GameStatus.ABANDONED);
+            session.setUpdatedAt(Instant.now());
+            if (session.getRoomCode() != null) {
+                roomCodeToSessionId.remove(session.getRoomCode());
+            }
+        }
+
+        GameEventDto event = GameEventDto.builder()
+                .eventType("MATCH_DISBANDED")
+                .type("MATCH_DISBANDED")
+                .message("A player has left or disbanded the room.")
+                .sessionId(sessionId)
+                .session(session)
+                .build();
+
+        messagingTemplate.convertAndSend("/topic/game/" + sessionId, event);
+        log.info("Room {} (sessionId: {}) disbanded by player {}", session.getRoomCode(), sessionId, playerId);
+    }
+
+    /**
+     * Allows cycling turn to the other player if timer expires, ensuring server currentTurn
+     * is synchronized and doesn't reject subsequent moves.
+     */
+    public GameEventDto passTurn(String sessionId, String playerId) {
+        GameSession session = sessionsById.get(sessionId);
+        if (session == null) {
+            throw new GameException("Game session not found: " + sessionId);
+        }
+
+        synchronized (session) {
+            if (session.getStatus() != GameStatus.ACTIVE) {
+                log.warn("Cannot pass turn in non-active session {}", sessionId);
+                return null;
+            }
+
+            // Switch turn between X and O
+            String nextTurn = "X".equalsIgnoreCase(session.getCurrentTurn()) ? "O" : "X";
+            session.setCurrentTurn(nextTurn);
+            session.setUpdatedAt(Instant.now());
+        }
+
+        GameEventDto event = GameEventDto.builder()
+                .eventType("TURN_PASSED")
+                .type("TURN_PASSED")
+                .session(session)
+                .message("Turn timed out and passed to player " + session.getCurrentTurn())
+                .build();
+
+        messagingTemplate.convertAndSend("/topic/game/" + sessionId, event);
+        log.info("Turn passed in session {} to player {}. New currentTurn is {}",
+                sessionId, playerId, session.getCurrentTurn());
+        return event;
     }
 
     /**
@@ -239,6 +335,7 @@ public class TicTacToeService {
 
         GameEventDto event = GameEventDto.builder()
                 .eventType(eventType)
+                .type(eventType)
                 .session(session)
                 .message(message)
                 .build();
@@ -271,6 +368,7 @@ public class TicTacToeService {
 
         GameEventDto event = GameEventDto.builder()
                 .eventType("REMATCH_REQUESTED")
+                .type("REMATCH_REQUESTED")
                 .session(session)
                 .message("Rematch started! Player " + session.getCurrentTurn() + " plays first.")
                 .build();

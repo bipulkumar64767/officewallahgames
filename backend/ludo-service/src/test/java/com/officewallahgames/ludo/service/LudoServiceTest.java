@@ -3,6 +3,7 @@ package com.officewallahgames.ludo.service;
 import com.officewallahgames.common.exception.GameException;
 import com.officewallahgames.ludo.dto.CreateRoomRequest;
 import com.officewallahgames.ludo.dto.JoinRoomRequest;
+import com.officewallahgames.ludo.dto.LudoEventDto;
 import com.officewallahgames.ludo.dto.LudoRoomResponse;
 import com.officewallahgames.ludo.dto.MoveTokenRequest;
 import com.officewallahgames.ludo.dto.RollDiceRequest;
@@ -17,12 +18,15 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.verify;
 
 @ExtendWith(MockitoExtension.class)
 class LudoServiceTest {
@@ -82,6 +86,74 @@ class LudoServiceTest {
         assertThat(joined.getStatus()).isEqualTo(GameStatus.ACTIVE);
         assertThat(joined.getSession().getPlayers().get(PlayerColor.YELLOW)).isEqualTo("joiner-2");
         assertThat(joined.getSession().getCurrentTurn()).isEqualTo(PlayerColor.RED);
+    }
+
+    @Test
+    @DisplayName("Join room reconnects existing player and broadcasts PLAYER_RECONNECTED")
+    void testJoinRoomReconnection() {
+        LudoRoomResponse created = service.createRoom(CreateRoomRequest.builder()
+                .playerId("host-1")
+                .playerName("Host")
+                .playerCount(2)
+                .build());
+
+        // Host rejoining
+        JoinRoomRequest rejoinReq = JoinRoomRequest.builder()
+                .roomCode(created.getRoomCode())
+                .playerId("host-1")
+                .playerName("Host")
+                .build();
+
+        LudoRoomResponse rejoined = service.joinRoom(rejoinReq);
+        assertThat(rejoined.getAssignedColor()).isEqualTo(PlayerColor.RED);
+        assertThat(rejoined.getSessionId()).isEqualTo(created.getSessionId());
+
+        ArgumentCaptor<LudoEventDto> eventCaptor = ArgumentCaptor.forClass(LudoEventDto.class);
+        verify(messagingTemplate).convertAndSend(eq("/topic/ludo/" + created.getSessionId()), eventCaptor.capture());
+        assertThat(eventCaptor.getValue().getEventType()).isEqualTo("PLAYER_RECONNECTED");
+    }
+
+    @Test
+    @DisplayName("Disband room marks session as ABANDONED and broadcasts MATCH_DISBANDED")
+    void testDisbandRoom() {
+        LudoRoomResponse created = service.createRoom(CreateRoomRequest.builder()
+                .playerId("host-1")
+                .playerName("Host")
+                .playerCount(2)
+                .build());
+
+        service.disbandRoom(created.getSessionId(), "host-1");
+
+        LudoSession session = service.getSessionById(created.getSessionId());
+        assertThat(session.getStatus()).isEqualTo(GameStatus.ABANDONED);
+
+        assertThatThrownBy(() -> service.getRoomStatus(created.getRoomCode()))
+                .isInstanceOf(GameException.class);
+    }
+
+    @Test
+    @DisplayName("Pass turn cycles currentTurn to next active color and broadcasts TURN_CHANGED")
+    void testPassTurn() {
+        LudoRoomResponse created = service.createRoom(CreateRoomRequest.builder()
+                .playerId("host-1")
+                .playerName("Host")
+                .playerCount(2)
+                .build());
+
+        service.joinRoom(JoinRoomRequest.builder()
+                .roomCode(created.getRoomCode())
+                .playerId("joiner-2")
+                .playerName("Bob")
+                .build());
+
+        // RED is current turn
+        LudoSession session = service.passTurn(created.getSessionId(), "host-1", PlayerColor.RED);
+        assertThat(session.getCurrentTurn()).isEqualTo(PlayerColor.YELLOW);
+        assertThat(session.isHasRolled()).isFalse();
+
+        // Pass turn again from YELLOW -> cycles back to RED
+        LudoSession session2 = service.passTurn(created.getSessionId(), "joiner-2", PlayerColor.YELLOW);
+        assertThat(session2.getCurrentTurn()).isEqualTo(PlayerColor.RED);
     }
 
     @Test

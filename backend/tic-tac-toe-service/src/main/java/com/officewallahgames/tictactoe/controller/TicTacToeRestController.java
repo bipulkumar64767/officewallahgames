@@ -2,6 +2,7 @@ package com.officewallahgames.tictactoe.controller;
 
 import com.officewallahgames.common.dto.ApiResponse;
 import com.officewallahgames.tictactoe.dto.CreateRoomRequest;
+import com.officewallahgames.tictactoe.dto.GameEventDto;
 import com.officewallahgames.tictactoe.dto.JoinRoomRequest;
 import com.officewallahgames.tictactoe.dto.RoomResponseDto;
 import com.officewallahgames.tictactoe.model.GameSession;
@@ -15,6 +16,8 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+
+import java.util.Map;
 
 @RestController
 @RequestMapping("/api/v1/tictactoe")
@@ -42,6 +45,24 @@ public class TicTacToeRestController {
             @PathVariable String roomCode) {
         GameSession session = ticTacToeService.getRoomStatus(roomCode);
         return ResponseEntity.ok(ApiResponse.success(session));
+    }
+
+    @PostMapping("/rooms/{sessionId}/disband")
+    public ResponseEntity<ApiResponse<Void>> disbandRoom(
+            @PathVariable String sessionId,
+            @RequestBody(required = false) Map<String, String> payload) {
+        String playerId = (payload != null) ? payload.get("playerId") : null;
+        ticTacToeService.disbandRoom(sessionId, playerId);
+        return ResponseEntity.ok(ApiResponse.success(null, "Room disbanded successfully"));
+    }
+
+    @PostMapping("/rooms/{sessionId}/pass-turn")
+    public ResponseEntity<ApiResponse<GameEventDto>> passTurn(
+            @PathVariable String sessionId,
+            @RequestBody(required = false) Map<String, String> payload) {
+        String playerId = (payload != null) ? payload.get("playerId") : null;
+        GameEventDto event = ticTacToeService.passTurn(sessionId, playerId);
+        return ResponseEntity.ok(ApiResponse.success(event, "Turn passed successfully"));
     }
 
     @PostMapping("/queue/quick-match")

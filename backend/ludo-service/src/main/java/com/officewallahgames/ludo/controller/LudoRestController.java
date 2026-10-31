@@ -5,6 +5,7 @@ import com.officewallahgames.ludo.dto.CreateRoomRequest;
 import com.officewallahgames.ludo.dto.JoinRoomRequest;
 import com.officewallahgames.ludo.dto.LudoRoomResponse;
 import com.officewallahgames.ludo.model.LudoSession;
+import com.officewallahgames.ludo.model.PlayerColor;
 import com.officewallahgames.ludo.service.LudoService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -15,6 +16,8 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+
+import java.util.Map;
 
 @RestController
 @RequestMapping("/api/v1/ludo")
@@ -42,6 +45,30 @@ public class LudoRestController {
             @PathVariable String roomCode) {
         LudoSession session = ludoService.getRoomStatus(roomCode);
         return ResponseEntity.ok(ApiResponse.success(session));
+    }
+
+    @PostMapping("/rooms/{sessionId}/disband")
+    public ResponseEntity<ApiResponse<Void>> disbandRoom(
+            @PathVariable String sessionId,
+            @RequestBody(required = false) Map<String, Object> payload) {
+        String playerId = (payload != null && payload.get("playerId") != null) ? payload.get("playerId").toString() : null;
+        ludoService.disbandRoom(sessionId, playerId);
+        return ResponseEntity.ok(ApiResponse.success(null, "Ludo room disbanded successfully"));
+    }
+
+    @PostMapping("/rooms/{sessionId}/pass-turn")
+    public ResponseEntity<ApiResponse<LudoSession>> passTurn(
+            @PathVariable String sessionId,
+            @RequestBody(required = false) Map<String, Object> payload) {
+        String playerId = (payload != null && payload.get("playerId") != null) ? payload.get("playerId").toString() : null;
+        PlayerColor color = null;
+        if (payload != null && payload.get("color") != null) {
+            try {
+                color = PlayerColor.valueOf(payload.get("color").toString().toUpperCase());
+            } catch (Exception ignored) {}
+        }
+        LudoSession session = ludoService.passTurn(sessionId, playerId, color);
+        return ResponseEntity.ok(ApiResponse.success(session, "Ludo turn passed successfully"));
     }
 
     @PostMapping("/queue/quick-match")

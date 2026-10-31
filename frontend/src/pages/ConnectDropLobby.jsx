@@ -52,7 +52,8 @@ const playTone = (freq, duration, type = 'sine') => {
 
 const ConnectDropLobby = () => {
   const { user } = useAuth();
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const hasAutoJoinedRef = useRef(false);
 
   // Navigation / Views: 'LOBBY' | 'WAITING_ROOM' | 'PLAYING'
   const [view, setView] = useState('LOBBY');
@@ -650,6 +651,8 @@ const ConnectDropLobby = () => {
 
   const confirmExitToLobby = () => {
     setShowExitConfirmModal(false);
+    hasAutoJoinedRef.current = true;
+    setSearchParams({}, { replace: true });
     if (!isAiOpponent && sessionId) {
       connectdropSocket.sendRoomEvent(sessionId, {
         type: 'MATCH_FORFEITED',
@@ -692,17 +695,29 @@ const ConnectDropLobby = () => {
     showToast('🚀 Match launched! Good luck!', 'success');
   };
 
-  // Auto-join from URL parameter
+  // Auto-join from URL parameter (only once per mount)
   useEffect(() => {
-    const urlRoom = searchParams.get('room');
-    if (urlRoom && view === 'LOBBY') {
+    const urlRoom = (searchParams.get('room') || '').trim().toUpperCase();
+    if (urlRoom && view === 'LOBBY' && !hasAutoJoinedRef.current) {
+      hasAutoJoinedRef.current = true;
+      setSearchParams({}, { replace: true });
       getConnectDropRoomStatus(urlRoom)
         .then(() => {
           joinPrivateRoom(urlRoom);
         })
         .catch(() => {});
     }
-  }, [searchParams, view, joinPrivateRoom]);
+  }, [searchParams, view, joinPrivateRoom, setSearchParams]);
+
+  // Support Android Back Gesture / Popstate to clear query room
+  useEffect(() => {
+    const onPopState = () => {
+      hasAutoJoinedRef.current = true;
+      setSearchParams({}, { replace: true });
+    };
+    window.addEventListener('popstate', onPopState);
+    return () => window.removeEventListener('popstate', onPopState);
+  }, [setSearchParams]);
 
   // Cleanup on unmount
   useEffect(() => {
@@ -980,12 +995,25 @@ const ConnectDropLobby = () => {
                 <button
                   className="btn-cyber btn-outline"
                   onClick={() => {
+                    hasAutoJoinedRef.current = true;
+                    setSearchParams({}, { replace: true });
                     connectdropSocket.disconnect();
                     setView('LOBBY');
                   }}
                 >
                   ⬅️ Cancel & Return to Lobby
                 </button>
+                <Link
+                  to="/"
+                  className="btn-cyber btn-outline"
+                  onClick={() => {
+                    hasAutoJoinedRef.current = true;
+                    setSearchParams({}, { replace: true });
+                    connectdropSocket.disconnect();
+                  }}
+                >
+                  🏠 Exit to Home
+                </Link>
               </div>
             </div>
           ) : (
@@ -1045,12 +1073,25 @@ const ConnectDropLobby = () => {
                 <button
                   className="btn-cyber btn-outline"
                   onClick={() => {
+                    hasAutoJoinedRef.current = true;
+                    setSearchParams({}, { replace: true });
                     connectdropSocket.disconnect();
                     setView('LOBBY');
                   }}
                 >
                   ⬅️ Leave Arena & Return to Lobby
                 </button>
+                <Link
+                  to="/"
+                  className="btn-cyber btn-outline"
+                  onClick={() => {
+                    hasAutoJoinedRef.current = true;
+                    setSearchParams({}, { replace: true });
+                    connectdropSocket.disconnect();
+                  }}
+                >
+                  🏠 Exit to Home
+                </Link>
               </div>
             </div>
           )}
@@ -1380,6 +1421,8 @@ const ConnectDropLobby = () => {
               <button
                 className="btn-cyber btn-outline"
                 onClick={() => {
+                  hasAutoJoinedRef.current = true;
+                  setSearchParams({}, { replace: true });
                   connectdropSocket.disconnect();
                   setView('LOBBY');
                 }}

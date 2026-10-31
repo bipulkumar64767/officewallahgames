@@ -135,7 +135,7 @@ class ConnectDropServiceTest {
         // Invalid room code throws GameException
         assertThatThrownBy(() -> service.getRoomStatus("INVALID-CODE"))
                 .isInstanceOf(GameException.class)
-                .hasMessageContaining("Room not found");
+                .hasMessageContaining("does not exist");
     }
 
     @Test

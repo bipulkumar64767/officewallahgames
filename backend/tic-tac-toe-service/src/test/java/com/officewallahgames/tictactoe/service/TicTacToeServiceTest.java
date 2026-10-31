@@ -103,8 +103,8 @@ class TicTacToeServiceTest {
     }
 
     @Test
-    @DisplayName("Host cannot join their own room as opponent")
-    void testHostCannotJoinOwnRoom() {
+    @DisplayName("Host rejoining room returns X and broadcasts PLAYER_RECONNECTED")
+    void testHostRejoiningRoom() {
         RoomResponseDto room = service.createRoom(CreateRoomRequest.builder()
                 .playerId("player-123")
                 .playerName("Solo")
@@ -116,7 +116,73 @@ class TicTacToeServiceTest {
                 .playerName("Solo again")
                 .build();
 
-        assertThrows(GameException.class, () -> service.joinRoom(joinRequest));
+        RoomResponseDto response = service.joinRoom(joinRequest);
+        assertNotNull(response);
+        assertEquals("X", response.getAssignedSymbol());
+        assertEquals(room.getSessionId(), response.getSessionId());
+
+        ArgumentCaptor<GameEventDto> eventCaptor = ArgumentCaptor.forClass(GameEventDto.class);
+        verify(messagingTemplate).convertAndSend(eq("/topic/game/" + room.getSessionId()), eventCaptor.capture());
+        assertEquals("PLAYER_RECONNECTED", eventCaptor.getValue().getEventType());
+        assertEquals("player-123", eventCaptor.getValue().getPlayerId());
+        assertEquals("X", eventCaptor.getValue().getSymbol());
+    }
+
+    @Test
+    @DisplayName("Player O rejoining room returns O and broadcasts PLAYER_RECONNECTED")
+    void testPlayerORejoiningRoom() {
+        RoomResponseDto room = service.createRoom(CreateRoomRequest.builder()
+                .playerId("host-1")
+                .playerName("Host")
+                .build());
+
+        service.joinRoom(JoinRoomRequest.builder()
+                .roomCode(room.getRoomCode())
+                .playerId("player-o")
+                .playerName("Player O")
+                .build());
+
+        JoinRoomRequest rejoinRequest = JoinRoomRequest.builder()
+                .roomCode(room.getRoomCode())
+                .playerId("player-o")
+                .playerName("Player O")
+                .build();
+
+        RoomResponseDto response = service.joinRoom(rejoinRequest);
+        assertNotNull(response);
+        assertEquals("O", response.getAssignedSymbol());
+    }
+
+    @Test
+    @DisplayName("Disband room marks session as ABANDONED and broadcasts MATCH_DISBANDED")
+    void testDisbandRoom() {
+        RoomResponseDto room = service.createRoom(CreateRoomRequest.builder()
+                .playerId("host-1")
+                .playerName("Host")
+                .build());
+
+        service.disbandRoom(room.getSessionId(), "host-1");
+
+        GameSession session = service.getSessionById(room.getSessionId());
+        assertEquals(GameStatus.ABANDONED, session.getStatus());
+
+        // Room code should be removed from roomCodeToSessionId
+        assertThrows(GameException.class, () -> service.getRoomStatus(room.getRoomCode()));
+    }
+
+    @Test
+    @DisplayName("Pass turn cycles currentTurn from X to O and broadcasts TURN_PASSED")
+    void testPassTurn() {
+        RoomResponseDto room = service.createRoom(CreateRoomRequest.builder().playerId("p1").playerName("P1").build());
+        service.joinRoom(JoinRoomRequest.builder().roomCode(room.getRoomCode()).playerId("p2").playerName("P2").build());
+
+        GameEventDto event = service.passTurn(room.getSessionId(), "p1");
+        assertNotNull(event);
+        assertEquals("O", event.getSession().getCurrentTurn());
+
+        GameEventDto secondEvent = service.passTurn(room.getSessionId(), "p2");
+        assertNotNull(secondEvent);
+        assertEquals("X", secondEvent.getSession().getCurrentTurn());
     }
 
     @Test

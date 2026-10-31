@@ -83,7 +83,8 @@ const createInitialGrid = () => {
 
 export const WordGridLobby = () => {
   const { user } = useAuth();
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const hasAutoJoinedRef = useRef(false);
 
   // Navigation & View: 'LOBBY' | 'ARENA'
   const [view, setView] = useState('LOBBY');
@@ -654,10 +655,12 @@ export const WordGridLobby = () => {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [view, currentPhase, currentTurn, mySlot, isSoloAI, selectedEmptyIndex, handleLetterSelection]);
 
-  // Initialize room from URL query if ?room=WGB-XXXX exists
+  // Initialize room from URL query if ?room=WGB-XXXX exists (only once per mount)
   useEffect(() => {
     const urlRoom = (searchParams.get('room') || '').trim().toUpperCase();
-    if (urlRoom && view === 'LOBBY' && !sessionId) {
+    if (urlRoom && !hasAutoJoinedRef.current && view === 'LOBBY' && !sessionId) {
+      hasAutoJoinedRef.current = true;
+      setSearchParams({}, { replace: true });
       getWordGridRoomStatus(urlRoom)
         .then((res) => {
           if (res) {
@@ -690,7 +693,7 @@ export const WordGridLobby = () => {
                   },
                 });
 
-                // FIX: Open Waiting Room Modal, DO NOT jump directly into ARENA!
+                // Open Waiting Room Modal, DO NOT jump directly into ARENA!
                 setIsRoomModalOpen(true);
                 showToast(`🎮 Joined Room ${urlRoom}! Please mark as Ready.`, 'success');
               }
@@ -699,7 +702,17 @@ export const WordGridLobby = () => {
         })
         .catch(() => {});
     }
-  }, [searchParams, user, view, sessionId, handleSocketEvent, showToast]);
+  }, [searchParams, user, view, sessionId, handleSocketEvent, showToast, setSearchParams]);
+
+  // Support Android Back Gesture / Popstate to clear query room
+  useEffect(() => {
+    const onPopState = () => {
+      hasAutoJoinedRef.current = true;
+      setSearchParams({}, { replace: true });
+    };
+    window.addEventListener('popstate', onPopState);
+    return () => window.removeEventListener('popstate', onPopState);
+  }, [setSearchParams]);
 
   // Clean up socket and matchmaking intervals on unmount
   useEffect(() => {
@@ -1161,9 +1174,20 @@ export const WordGridLobby = () => {
     }
   };
 
+  const handleLeaveRoomModal = () => {
+    hasAutoJoinedRef.current = true;
+    setSearchParams({}, { replace: true });
+    wordgridSocket.disconnect();
+    setSessionId(null);
+    setRoomCode('');
+    setIsRoomModalOpen(false);
+  };
+
   // Reset to Lobby
   const confirmExitToLobby = () => {
     setShowExitConfirmModal(false);
+    hasAutoJoinedRef.current = true;
+    setSearchParams({}, { replace: true });
     if (!isSoloAI && sessionId && view === 'ARENA' && !isGameOver) {
       wordgridSocket.sendRoomEvent(sessionId, {
         type: 'MATCH_FORFEITED',
@@ -1172,6 +1196,8 @@ export const WordGridLobby = () => {
       });
     }
     wordgridSocket.disconnect();
+    setSessionId(null);
+    setRoomCode('');
     setView('LOBBY');
     setIsGameOver(false);
     setGrid(createInitialGrid());
@@ -1369,7 +1395,7 @@ export const WordGridLobby = () => {
       {isRoomModalOpen && (
         <div className="wgb-modal-overlay">
           <div className="wgb-modal-box">
-            <button className="wgb-modal-close" onClick={() => setIsRoomModalOpen(false)}>
+            <button className="wgb-modal-close" onClick={handleLeaveRoomModal}>
               ✕
             </button>
             <div className="wgb-lobby-badge">
@@ -1500,7 +1526,7 @@ export const WordGridLobby = () => {
                     </button>
                   );
                 })()}
-                <button className="wgb-btn-outline" onClick={() => setIsRoomModalOpen(false)}>
+                <button className="wgb-btn-outline" onClick={handleLeaveRoomModal}>
                   Cancel
                 </button>
               </div>
@@ -1518,7 +1544,7 @@ export const WordGridLobby = () => {
                     ? '✨ You are ready! Waiting for host to start the game...'
                     : '👉 Click "Mark as Ready" to signal the host you are ready to play!'}
                 </div>
-                <button className="wgb-btn-outline" onClick={() => setIsRoomModalOpen(false)}>
+                <button className="wgb-btn-outline" onClick={handleLeaveRoomModal}>
                   Leave Room
                 </button>
               </div>

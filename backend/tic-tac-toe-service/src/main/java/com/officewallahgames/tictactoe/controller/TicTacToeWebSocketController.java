@@ -35,4 +35,22 @@ public class TicTacToeWebSocketController {
         log.info("Received rematch request for session {} by player {}", sessionId, playerId);
         ticTacToeService.requestRematch(sessionId, playerId);
     }
+
+    @MessageMapping("/game/{sessionId}/disband")
+    public void handleDisband(
+            @DestinationVariable String sessionId,
+            @Payload(required = false) Map<String, String> payload) {
+        String playerId = (payload != null) ? payload.get("playerId") : null;
+        log.info("Received disband request for session {} by player {}", sessionId, playerId);
+        ticTacToeService.disbandRoom(sessionId, playerId);
+    }
+
+    @MessageMapping("/game/{sessionId}/pass-turn")
+    public void handlePassTurn(
+            @DestinationVariable String sessionId,
+            @Payload(required = false) Map<String, String> payload) {
+        String playerId = (payload != null) ? payload.get("playerId") : null;
+        log.info("Received pass-turn request for session {} by player {}", sessionId, playerId);
+        ticTacToeService.passTurn(sessionId, playerId);
+    }
 }

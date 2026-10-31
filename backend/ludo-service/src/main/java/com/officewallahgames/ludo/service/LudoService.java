@@ -103,6 +103,7 @@ public class LudoService {
 
     /**
      * Joins an existing room by room code. Assigns next available waiting color.
+     * Also supports reconnecting players without error.
      */
     public LudoRoomResponse joinRoom(JoinRoomRequest request) {
         if (request == null || request.getRoomCode() == null) {
@@ -121,10 +122,22 @@ public class LudoService {
         }
 
         synchronized (session) {
-            // Check if player is already in this session
-            for (Map.Entry<PlayerColor, String> entry : session.getPlayers().entrySet()) {
-                if (entry.getValue().equals(request.getPlayerId())) {
-                    return buildRoomResponse(session, entry.getKey());
+            // Check if player is already in this session (reconnecting/rejoining)
+            if (session.getPlayers().containsValue(request.getPlayerId())) {
+                PlayerColor assignedColor = null;
+                for (Map.Entry<PlayerColor, String> entry : session.getPlayers().entrySet()) {
+                    if (entry.getValue().equals(request.getPlayerId())) {
+                        assignedColor = entry.getKey();
+                        break;
+                    }
+                }
+                if (assignedColor != null) {
+                    String pName = session.getPlayerNames().getOrDefault(assignedColor, "Player " + assignedColor);
+                    LudoEventDto reconnectEvent = LudoEventDto.of("PLAYER_RECONNECTED", session,
+                            pName + " (" + assignedColor + ") reconnected.");
+                    messagingTemplate.convertAndSend("/topic/ludo/" + sessionId, reconnectEvent);
+                    log.info("Player {} reconnected to room {} as {}", request.getPlayerId(), normalizedCode, assignedColor);
+                    return buildRoomResponse(session, assignedColor);
                 }
             }
 
@@ -176,6 +189,61 @@ public class LudoService {
 
             return buildRoomResponse(session, assignedColor);
         }
+    }
+
+    /**
+     * Cycles session currentTurn to next active color, resets hasRolled,
+     * and broadcasts TURN_CHANGED so turns never deadlock on timer expiration.
+     */
+    public LudoSession passTurn(String sessionId, String playerId, PlayerColor color) {
+        LudoSession session = getSessionById(sessionId);
+
+        synchronized (session) {
+            if (session.getStatus() != GameStatus.ACTIVE) {
+                log.warn("Cannot pass turn in non-active session {}", sessionId);
+                return session;
+            }
+
+            log.info("Passing turn in Ludo session {} for player {} ({}) from currentTurn {}",
+                    sessionId, playerId, color, session.getCurrentTurn());
+
+            session.setHasRolled(false);
+            session.setConsecutiveSixes(0);
+            session.setMovableTokenIds(Collections.emptyList());
+            engine.cycleTurn(session);
+            session.setUpdatedAt(System.currentTimeMillis());
+
+            LudoEventDto event = LudoEventDto.of("TURN_CHANGED", session,
+                    "Turn timed out and passed to " + session.getCurrentTurn());
+            messagingTemplate.convertAndSend("/topic/ludo/" + sessionId, event);
+
+            return session;
+        }
+    }
+
+    /**
+     * Sets status to GameStatus.ABANDONED, removes roomCode from roomCodeToSessionId,
+     * and broadcasts MATCH_DISBANDED to /topic/ludo/{sessionId}.
+     */
+    public void disbandRoom(String sessionId, String playerId) {
+        LudoSession session = sessionsById.get(sessionId);
+        if (session == null) {
+            log.warn("Cannot disband non-existent session {}", sessionId);
+            return;
+        }
+
+        synchronized (session) {
+            session.setStatus(GameStatus.ABANDONED);
+            session.setUpdatedAt(System.currentTimeMillis());
+            if (session.getRoomCode() != null) {
+                roomCodeToSessionId.remove(session.getRoomCode());
+            }
+        }
+
+        LudoEventDto event = LudoEventDto.of("MATCH_DISBANDED", session,
+                "A player has left or disbanded the room.");
+        messagingTemplate.convertAndSend("/topic/ludo/" + sessionId, event);
+        log.info("Ludo room {} (sessionId: {}) disbanded by player {}", session.getRoomCode(), sessionId, playerId);
     }
 
     /**

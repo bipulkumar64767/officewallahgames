@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { useSearchParams, Link } from 'react-router-dom';
+import { useSearchParams, Link, useNavigate } from 'react-router-dom';
 import confetti from 'canvas-confetti';
 import { useAuth } from '../context/AuthContext';
 import { getPlayerIdentity } from '../utils/playerIdentity';
@@ -7,10 +7,11 @@ import {
   createLudoRoom,
   joinLudoRoom,
   getLudoRoomStatus,
-  queueQuickMatch,
   getSlotStatesForCount,
 } from '../services/ludoApi';
 import { ludoSocket } from '../services/ludoSocket';
+import { ludoAudio } from '../utils/ludoAudio';
+import { useLudoVoiceChat } from '../utils/useLudoVoiceChat';
 import './LudoLobby.css';
 
 // 52 Main Track Coordinates in clockwise order around the 15x15 board
@@ -112,6 +113,14 @@ const HOME_STRETCHES = {
 
 const SAFE_TRACK_INDICES = new Set([0, 8, 13, 21, 26, 34, 39, 47]);
 
+// Distinctive glyph icons for 100% instant identification
+const COLOR_GLYPHS = {
+  RED: '⚔️',
+  BLUE: '⚡',
+  GREEN: '🛡️',
+  YELLOW: '☀️',
+};
+
 // Initial token setup for each color (4 tokens each at yard: step = -1)
 const createInitialTokens = () => {
   const tokens = {};
@@ -140,7 +149,9 @@ const REALISTIC_NAMES = [
 
 export const LudoLobby = () => {
   const { user } = useAuth();
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const navigate = useNavigate();
+  const hasAutoJoinedRef = useRef(false);
 
   // Active view: 'LOBBY' | 'WAITING_ROOM' | 'PLAYING'
   const [view, setView] = useState('LOBBY');
@@ -191,6 +202,28 @@ export const LudoLobby = () => {
   const [toastMessage, setToastMessage] = useState('');
   const [showExitConfirmModal, setShowExitConfirmModal] = useState(false);
 
+  // Animation & Audio & Blast states
+  const [isTokenMoving, setIsTokenMoving] = useState(false);
+  const [blastCell, setBlastCell] = useState(null); // { r, c }
+  const [isSoundMuted, setIsSoundMuted] = useState(() => ludoAudio.isMuted());
+
+  // Match Disbanded Modal state
+  const [isMatchDisbanded, setIsMatchDisbanded] = useState(false);
+  const [disbandMessage, setDisbandMessage] = useState('');
+
+  const playerIdentity = getPlayerIdentity(user);
+  const playerId = playerIdentity.playerId;
+  const playerName = playerIdentity.playerName;
+
+  // WebRTC In-Room Voice Chat hook
+  const voiceChat = useLudoVoiceChat({
+    sessionId,
+    playerId,
+    myColor,
+    playerName,
+    isSoloAI,
+  });
+
   // Refs for async & AI callbacks
   const stateRef = useRef({
     currentTurn: 'RED',
@@ -208,6 +241,7 @@ export const LudoLobby = () => {
     rankings: [],
     playerCount: 2,
     sessionId: '',
+    isTokenMoving: false,
   });
 
   useEffect(() => {
@@ -227,6 +261,7 @@ export const LudoLobby = () => {
       rankings,
       playerCount,
       sessionId,
+      isTokenMoving,
     };
   }, [
     currentTurn,
@@ -244,11 +279,8 @@ export const LudoLobby = () => {
     rankings,
     playerCount,
     sessionId,
+    isTokenMoving,
   ]);
-
-  const playerIdentity = getPlayerIdentity(user);
-  const playerId = playerIdentity.playerId;
-  const playerName = playerIdentity.playerName;
 
   // Show transient toast
   const showToast = useCallback((msg, durationMs = 2000) => {
@@ -262,7 +294,7 @@ export const LudoLobby = () => {
   const triggerCelebration = useCallback(() => {
     try {
       confetti({
-        particleCount: 150,
+        particleCount: 160,
         spread: 90,
         origin: { y: 0.6 },
         colors: ['#00f2fe', '#00ff88', '#ffe600', '#ff3366'],
@@ -271,6 +303,13 @@ export const LudoLobby = () => {
       console.warn('Confetti error:', e);
     }
   }, []);
+
+  // Sound toggle button handler
+  const handleToggleSound = useCallback(() => {
+    const nextMuted = ludoAudio.toggleMute();
+    setIsSoundMuted(nextMuted);
+    showToast(nextMuted ? '🔈 Sound: OFF' : '🔊 Sound: ON', 1200);
+  }, [showToast]);
 
   // Compute cell coordinates for a token
   const getTokenCoordinates = useCallback((token) => {
@@ -292,11 +331,10 @@ export const LudoLobby = () => {
 
   // Get active turn order based on player count and slot states
   const getActiveTurnOrder = useCallback((slots) => {
-    // Clockwise order: RED -> BLUE -> GREEN -> YELLOW
     return ALL_COLORS.filter((c) => slots[c] === 'ACTIVE');
   }, []);
 
-  // Switch to next active player turn
+  // Switch to next active player turn with synchronous socket broadcast
   const passTurnToNext = useCallback(
     (reasonToast = '') => {
       if (stateRef.current.isGameOver) return;
@@ -313,6 +351,18 @@ export const LudoLobby = () => {
       setMovableTokens([]);
       setConsecutiveSixes(0);
       setTurnTimer(30);
+
+      // Requirement 5: Synchronous turn changed event to prevent deadlock
+      if (!stateRef.current.isSoloAI && stateRef.current.sessionId) {
+        ludoSocket.sendRoomEvent(stateRef.current.sessionId, {
+          type: 'TURN_CHANGED',
+          eventType: 'TURN_CHANGED',
+          currentTurn: nextColor,
+          turnTimer: 30,
+          consecutiveSixes: 0,
+          reason: reasonToast,
+        });
+      }
     },
     [getActiveTurnOrder, showToast]
   );
@@ -324,16 +374,13 @@ export const LudoLobby = () => {
 
     list.forEach((token) => {
       if (token.step === 56) {
-        // Already finished
         return;
       }
       if (token.step === -1) {
-        // In Yard: only roll of 6 can bring it out
         if (roll === 6) {
           movable.push(token.tokenId);
         }
       } else if (token.step + roll <= 56) {
-        // Can advance on board or home stretch
         movable.push(token.tokenId);
       }
     });
@@ -341,60 +388,48 @@ export const LudoLobby = () => {
     return movable;
   }, []);
 
-  // Execute a token move
-  const handleExecuteMove = useCallback(
-    (tokenId) => {
+  // Finalize move logic after step-by-step animation finishes
+  const finalizeMove = useCallback(
+    (turnColor, tokenId, roll, fromStep, targetStep) => {
       const {
-        currentTurn: turnColor,
-        tokens: currentTokens,
-        diceValue: roll,
         slotStates: currentSlots,
         rankings: currentRanks,
       } = stateRef.current;
 
-      const tokenList = currentTokens[turnColor];
-      const targetToken = tokenList.find((t) => t.tokenId === tokenId);
-      if (!targetToken) return;
-
-      const newTokens = JSON.parse(JSON.stringify(currentTokens));
+      const newTokens = JSON.parse(JSON.stringify(stateRef.current.tokens));
       const myUpdatedTokens = newTokens[turnColor];
       const tokToUpdate = myUpdatedTokens.find((t) => t.tokenId === tokenId);
+      if (tokToUpdate) {
+        tokToUpdate.step = targetStep;
+      }
 
       let capturesOpponent = false;
-      let reachesHome = false;
+      let reachesHome = targetStep === 56;
+      let capturedOppColor = null;
+      let capturedOppTokenId = null;
 
-      if (tokToUpdate.step === -1) {
-        // Bring token out of Yard to starting cell (step 0)
-        tokToUpdate.step = 0;
-        showToast(`🚀 ${turnColor} deployed ${tokToUpdate.tokenId} onto the track!`);
-      } else {
-        tokToUpdate.step += roll;
-        if (tokToUpdate.step === 56) {
-          reachesHome = true;
-          showToast(`🏆 ${turnColor}'s token reached Home!`);
-        }
+      if (reachesHome) {
+        showToast(`🏆 ${turnColor}'s token reached Home!`);
       }
 
       // Check capture logic if landing on main track
-      if (tokToUpdate.step >= 0 && tokToUpdate.step < 51) {
+      if (targetStep >= 0 && targetStep < 51) {
         const myStartOffset = COLOR_START_INDEX[turnColor];
-        const landingTrackIndex = (myStartOffset + tokToUpdate.step) % 52;
+        const landingTrackIndex = (myStartOffset + targetStep) % 52;
 
-        // Is this a safe cell?
         if (!SAFE_TRACK_INDICES.has(landingTrackIndex)) {
-          // Check opponents on this same cell
           ALL_COLORS.forEach((oppColor) => {
             if (oppColor !== turnColor && currentSlots[oppColor] === 'ACTIVE') {
-              const oppList = newTokens[oppColor];
+              const oppList = newTokens[oppColor] || [];
               oppList.forEach((oppToken) => {
                 if (oppToken.step >= 0 && oppToken.step < 51) {
                   const oppStartOffset = COLOR_START_INDEX[oppColor];
                   const oppTrackIndex = (oppStartOffset + oppToken.step) % 52;
                   if (oppTrackIndex === landingTrackIndex) {
-                    // Capture opponent! Send back to yard
-                    oppToken.step = -1;
+                    oppToken.step = -1; // Send back to yard
                     capturesOpponent = true;
-                    showToast(`💥 ${turnColor} captured ${oppColor}'s token ${oppToken.tokenId}!`);
+                    capturedOppColor = oppColor;
+                    capturedOppTokenId = oppToken.tokenId;
                   }
                 }
               });
@@ -403,16 +438,21 @@ export const LudoLobby = () => {
         }
       }
 
-      // Update state
+      // Trigger capture blast visual & explosion sound
+      if (capturesOpponent) {
+        const landingCoord = TRACK_COORDINATES[(COLOR_START_INDEX[turnColor] + targetStep) % 52];
+        setBlastCell(landingCoord);
+        ludoAudio.playCapture();
+        showToast(`💥 ${turnColor} captured ${capturedOppColor}'s token ${capturedOppTokenId}!`, 2500);
+        setTimeout(() => setBlastCell(null), 850);
+      }
+
       setTokens(newTokens);
+      setIsTokenMoving(false);
       setMovableTokens([]);
       setHasRolled(false);
 
-      if (!stateRef.current.isSoloAI && stateRef.current.sessionId) {
-        ludoSocket.moveToken(stateRef.current.sessionId, playerId, turnColor, tokenId);
-      }
-
-      // Check if player has finished all 4 tokens
+      // Check if player finished all 4 tokens
       const finishedCount = myUpdatedTokens.filter((t) => t.step === 56).length;
       if (finishedCount === 4 && !currentRanks.includes(turnColor)) {
         const newRanks = [...currentRanks, turnColor];
@@ -421,20 +461,26 @@ export const LudoLobby = () => {
 
         if (newRanks.length === 1) {
           triggerCelebration();
+          ludoAudio.playVictory();
         }
 
         const activeOrder = getActiveTurnOrder(currentSlots);
         if (newRanks.length >= activeOrder.length - 1 || activeOrder.length <= 2) {
-          // Game Over!
           setIsGameOver(true);
           return;
         }
       }
 
-      // Check bonus turn: rolling 6, capturing an opponent, or reaching home grants bonus turn!
-      const getsBonusTurn = (roll === 6 && stateRef.current.consecutiveSixes < 3) || capturesOpponent || reachesHome;
+      // Check bonus turn: 6 roll, capture opponent, or reaching home grants bonus turn!
+      const getsBonusTurn =
+        (roll === 6 && stateRef.current.consecutiveSixes < 3) ||
+        capturesOpponent ||
+        reachesHome;
+
       const activeOrder = getActiveTurnOrder(currentSlots);
-      const nextTurnColor = getsBonusTurn ? turnColor : activeOrder[(activeOrder.indexOf(turnColor) + 1) % activeOrder.length];
+      const nextTurnColor = getsBonusTurn
+        ? turnColor
+        : activeOrder[(activeOrder.indexOf(turnColor) + 1) % activeOrder.length];
 
       // Broadcast move to all players in the room for real-time synchronization
       if (!stateRef.current.isSoloAI && stateRef.current.sessionId) {
@@ -444,9 +490,16 @@ export const LudoLobby = () => {
           playerId,
           color: turnColor,
           tokenId,
+          roll,
+          fromStep,
+          targetStep,
           tokens: newTokens,
           nextTurn: nextTurnColor,
           bonusTurn: getsBonusTurn,
+          capturesOpponent,
+          capturedOppColor,
+          capturedOppTokenId,
+          reachesHome,
         });
       }
 
@@ -457,15 +510,73 @@ export const LudoLobby = () => {
         passTurnToNext();
       }
     },
-    [passTurnToNext, showToast, triggerCelebration, getActiveTurnOrder, playerId]
+    [getActiveTurnOrder, passTurnToNext, playerId, showToast, triggerCelebration]
+  );
+
+  // Requirement 1: Step-by-Step Box-by-Box Goti Movement Animation
+  const handleExecuteMove = useCallback(
+    (tokenId) => {
+      const {
+        currentTurn: turnColor,
+        tokens: currentTokens,
+        diceValue: roll,
+        isTokenMoving: currentlyMoving,
+      } = stateRef.current;
+
+      if (currentlyMoving) return;
+
+      const tokenList = currentTokens[turnColor];
+      const targetToken = tokenList?.find((t) => t.tokenId === tokenId);
+      if (!targetToken) return;
+
+      const fromStep = targetToken.step;
+      let targetStep = 0;
+      const stepSequence = [];
+
+      if (fromStep === -1) {
+        targetStep = 0;
+        stepSequence.push(0);
+        showToast(`🚀 ${turnColor} deployed ${tokenId} onto the track!`);
+      } else {
+        targetStep = fromStep + roll;
+        for (let s = fromStep + 1; s <= targetStep; s++) {
+          stepSequence.push(s);
+        }
+      }
+
+      setIsTokenMoving(true);
+      setMovableTokens([]);
+
+      let seqIndex = 0;
+      const animateStep = () => {
+        if (seqIndex < stepSequence.length) {
+          const nextStepVal = stepSequence[seqIndex];
+          setTokens((prev) => {
+            const updated = JSON.parse(JSON.stringify(prev));
+            const tok = updated[turnColor]?.find((t) => t.tokenId === tokenId);
+            if (tok) tok.step = nextStepVal;
+            return updated;
+          });
+          ludoAudio.playHop(nextStepVal);
+          seqIndex++;
+          setTimeout(animateStep, 110);
+        } else {
+          finalizeMove(turnColor, tokenId, roll, fromStep, targetStep);
+        }
+      };
+
+      animateStep();
+    },
+    [finalizeMove, showToast]
   );
 
   // Roll Dice handler
   const handleRollDice = useCallback(() => {
-    if (isRolling || hasRolled || isGameOver) return;
+    if (isRolling || hasRolled || isGameOver || isTokenMoving) return;
 
     setIsRolling(true);
     setMovableTokens([]);
+    ludoAudio.playDiceRoll();
 
     if (!isSoloAI && stateRef.current.sessionId) {
       ludoSocket.rollDice(stateRef.current.sessionId, playerId, stateRef.current.currentTurn);
@@ -504,7 +615,7 @@ export const LudoLobby = () => {
       if (nextSixes >= 3) {
         showToast(`⚠️ ${stateRef.current.currentTurn} rolled three 6s — turn forfeited!`, 2500);
         setTimeout(() => {
-          passTurnToNext();
+          passTurnToNext('Three 6s rolled');
         }, 1200);
         return;
       }
@@ -512,38 +623,41 @@ export const LudoLobby = () => {
       if (legalMoves.length === 0) {
         showToast(`No legal moves for ${stateRef.current.currentTurn}! Turn passed.`, 1600);
         setTimeout(() => {
-          passTurnToNext();
+          passTurnToNext('No legal moves');
         }, 1200);
       } else {
         setMovableTokens(legalMoves);
       }
     }, 600);
-  }, [isRolling, hasRolled, isGameOver, computeMovableTokens, passTurnToNext, showToast, isSoloAI, playerId]);
+  }, [isRolling, hasRolled, isGameOver, isTokenMoving, computeMovableTokens, passTurnToNext, showToast, isSoloAI, playerId]);
 
   // AI Opponent Decision Engine - ONLY runs in Solo AI mode
   useEffect(() => {
-    if (view !== 'PLAYING' || isGameOver || !isSoloAI) return;
+    if (view !== 'PLAYING' || isGameOver || !isSoloAI || isTokenMoving) return;
 
-    const { currentTurn: turn, myColor: humanColor, hasRolled: rolled, diceValue: roll, tokens: curTokens } = stateRef.current;
+    const {
+      currentTurn: turn,
+      myColor: humanColor,
+      hasRolled: rolled,
+      diceValue: roll,
+      tokens: curTokens,
+    } = stateRef.current;
     const isAiTurn = turn !== humanColor;
 
     if (!isAiTurn) return;
 
     let aiTimer;
     if (!rolled && !isRolling) {
-      // AI rolls dice after realistic pause
       aiTimer = setTimeout(() => {
         handleRollDice();
       }, 700);
     } else if (rolled && movableTokens.length > 0) {
-      // AI picks best move
       aiTimer = setTimeout(() => {
-        // Priority 1: Pick a move that captures an opponent
         let bestToken = movableTokens[0];
         let foundCapture = false;
 
         for (const tid of movableTokens) {
-          const tok = curTokens[turn].find((t) => t.tokenId === tid);
+          const tok = curTokens[turn]?.find((t) => t.tokenId === tid);
           if (tok) {
             const nextStep = tok.step === -1 ? 0 : tok.step + roll;
             if (nextStep >= 0 && nextStep < 51) {
@@ -569,9 +683,10 @@ export const LudoLobby = () => {
           if (foundCapture) break;
         }
 
-        // Priority 2: If rolled 6 and has token in yard, deploy it!
         if (!foundCapture && roll === 6) {
-          const yardTok = curTokens[turn].find((t) => t.step === -1 && movableTokens.includes(t.tokenId));
+          const yardTok = curTokens[turn]?.find(
+            (t) => t.step === -1 && movableTokens.includes(t.tokenId)
+          );
           if (yardTok) bestToken = yardTok.tokenId;
         }
 
@@ -580,17 +695,17 @@ export const LudoLobby = () => {
     }
 
     return () => clearTimeout(aiTimer);
-  }, [view, currentTurn, hasRolled, isRolling, movableTokens, isGameOver, handleRollDice, handleExecuteMove]);
+  }, [view, currentTurn, hasRolled, isRolling, movableTokens, isGameOver, isTokenMoving, handleRollDice, handleExecuteMove]);
 
   // Turn timer countdown (30s)
   useEffect(() => {
-    if (view !== 'PLAYING' || isGameOver) return;
+    if (view !== 'PLAYING' || isGameOver || isTokenMoving) return;
 
     const interval = setInterval(() => {
       setTurnTimer((prev) => {
         if (prev <= 1) {
           showToast(`⏳ Turn timer expired for ${stateRef.current.currentTurn}!`, 1500);
-          passTurnToNext();
+          passTurnToNext('Time expired');
           return 30;
         }
         return prev - 1;
@@ -598,7 +713,7 @@ export const LudoLobby = () => {
     }, 1000);
 
     return () => clearInterval(interval);
-  }, [view, isGameOver, passTurnToNext, showToast]);
+  }, [view, isGameOver, isTokenMoving, passTurnToNext, showToast]);
 
   // Real-time WebSocket synchronization
   const handleSocketEvent = useCallback(
@@ -609,6 +724,21 @@ export const LudoLobby = () => {
 
       const data = evt.data || evt.session || evt;
 
+      // WebRTC Signal handler
+      if (eventType === 'WEBRTC_SIGNAL') {
+        voiceChat.handleWebRTCSignal(evt);
+        return;
+      }
+
+      // Disband handling
+      if (eventType === 'MATCH_DISBANDED') {
+        const leaver = evt.leaver || evt.playerName || 'A player';
+        setDisbandMessage(evt.message || `⚠️ Match Disbanded: ${leaver} has left the match.`);
+        setIsMatchDisbanded(true);
+        voiceChat.disconnectVoice();
+        return;
+      }
+
       if (eventType === 'PLAYER_JOINED' || eventType === 'ROOM_READY') {
         if (data.slotStates) {
           setSlotStates((prev) => ({ ...prev, ...data.slotStates }));
@@ -617,8 +747,15 @@ export const LudoLobby = () => {
           setPlayerNames((prev) => ({ ...prev, ...data.playerNames }));
         }
 
-        const color = evt.color || data.assignedColor || (data.players && Object.keys(data.players).find(c => data.players[c] === evt.playerId)) || 'YELLOW';
-        const joinedName = evt.playerName || (data.playerNames && data.playerNames[color]) || `Player (${color})`;
+        const color =
+          evt.color ||
+          data.assignedColor ||
+          (data.players && Object.keys(data.players).find((c) => data.players[c] === evt.playerId)) ||
+          'YELLOW';
+        const joinedName =
+          evt.playerName ||
+          (data.playerNames && data.playerNames[color]) ||
+          `Player (${color})`;
 
         setSlotStates((prev) => ({
           ...prev,
@@ -634,7 +771,6 @@ export const LudoLobby = () => {
         }));
         showToast(`🎮 ${joinedName} joined the room as ${color}!`, 2500);
 
-        // If this user is Host, send ROOM_SYNC back so guest receives full room status
         if (stateRef.current.isHost) {
           setTimeout(() => {
             if (stateRef.current.sessionId) {
@@ -673,7 +809,6 @@ export const LudoLobby = () => {
         const pName = stateRef.current.playerNames[color] || color;
         showToast(`${pName} is ${isReady ? 'READY 🟢' : 'NOT READY ⏳'}`, 2000);
       } else if (eventType === 'START_MATCH') {
-        // Starts game for EVERYONE in sync
         const activeSlots = { ...stateRef.current.slotStates };
         ALL_COLORS.forEach((c) => {
           if (activeSlots[c] === 'WAITING' && stateRef.current.readyStates[c]) {
@@ -693,8 +828,9 @@ export const LudoLobby = () => {
         showToast('🚀 Match started! RED goes first.', 3000);
       } else if (eventType === 'DICE_ROLLED') {
         if (evt.playerId && evt.playerId === playerId) {
-          return; // Skip own echo
+          return;
         }
+        ludoAudio.playDiceRoll();
         const val = evt.diceValue || (data && data.diceValue);
         if (val) {
           setDiceValue(val);
@@ -709,19 +845,86 @@ export const LudoLobby = () => {
         setTurnTimer(30);
       } else if (eventType === 'TOKEN_MOVED') {
         if (evt.playerId && evt.playerId === playerId) {
-          return; // Skip own echo
+          return;
         }
-        if (evt.tokens) {
-          setTokens(evt.tokens);
+
+        const {
+          color: movingColor,
+          tokenId,
+          fromStep,
+          targetStep,
+          tokens: finalTokens,
+          capturesOpponent,
+          capturedOppColor,
+          capturedOppTokenId,
+          nextTurn,
+        } = evt;
+
+        if (fromStep !== undefined && targetStep !== undefined && movingColor && tokenId) {
+          // Run 110ms step-by-step animation on remote client
+          setIsTokenMoving(true);
+          const stepSequence = [];
+          if (fromStep === -1) {
+            stepSequence.push(0);
+          } else {
+            for (let s = fromStep + 1; s <= targetStep; s++) {
+              stepSequence.push(s);
+            }
+          }
+
+          let remoteStepIdx = 0;
+          const animateRemoteStep = () => {
+            if (remoteStepIdx < stepSequence.length) {
+              const nextStepVal = stepSequence[remoteStepIdx];
+              setTokens((prev) => {
+                const updated = JSON.parse(JSON.stringify(prev));
+                const tok = updated[movingColor]?.find((t) => t.tokenId === tokenId);
+                if (tok) tok.step = nextStepVal;
+                return updated;
+              });
+              ludoAudio.playHop(nextStepVal);
+              remoteStepIdx++;
+              setTimeout(animateRemoteStep, 110);
+            } else {
+              if (capturesOpponent) {
+                const landingCoord =
+                  TRACK_COORDINATES[(COLOR_START_INDEX[movingColor] + targetStep) % 52];
+                setBlastCell(landingCoord);
+                ludoAudio.playCapture();
+                showToast(
+                  `💥 ${movingColor} captured ${capturedOppColor}'s token ${capturedOppTokenId}!`,
+                  2500
+                );
+                setTimeout(() => setBlastCell(null), 850);
+              }
+              if (finalTokens) setTokens(finalTokens);
+              setIsTokenMoving(false);
+              setHasRolled(false);
+              setMovableTokens([]);
+              if (nextTurn) setCurrentTurn(nextTurn);
+              setTurnTimer(30);
+            }
+          };
+
+          animateRemoteStep();
+        } else {
+          if (evt.tokens) setTokens(evt.tokens);
+          if (evt.nextTurn) setCurrentTurn(evt.nextTurn);
+          setHasRolled(false);
+          setMovableTokens([]);
+          setTurnTimer(30);
         }
-        if (evt.nextTurn) {
-          setCurrentTurn(evt.nextTurn);
-        } else if (data && data.currentTurn) {
-          setCurrentTurn(data.currentTurn);
+      } else if (eventType === 'TURN_CHANGED') {
+        if (evt.currentTurn) {
+          setCurrentTurn(evt.currentTurn);
+          setHasRolled(false);
+          setMovableTokens([]);
+          setConsecutiveSixes(evt.consecutiveSixes || 0);
+          setTurnTimer(evt.turnTimer || 30);
+          if (evt.reason) {
+            showToast(`Turn passed to ${evt.currentTurn} (${evt.reason})`, 1400);
+          }
         }
-        setHasRolled(false);
-        setMovableTokens([]);
-        setTurnTimer(30);
       } else if (eventType === 'TURN_SKIPPED') {
         showToast(`Turn skipped for ${evt.skippedColor || data.color}: ${evt.message || evt.reason}`);
         if (evt.nextTurn || data.currentTurn) setCurrentTurn(evt.nextTurn || data.currentTurn);
@@ -731,7 +934,7 @@ export const LudoLobby = () => {
         setIsGameOver(true);
       }
     },
-    [showToast]
+    [showToast, playerId, voiceChat]
   );
 
   useEffect(() => {
@@ -740,7 +943,6 @@ export const LudoLobby = () => {
     ludoSocket.connect({
       sessionId,
       onConnect: () => {
-        // If guest, broadcast PLAYER_JOINED so Host's screen updates immediately!
         if (!stateRef.current.isHost) {
           ludoSocket.sendRoomEvent(sessionId, {
             type: 'PLAYER_JOINED',
@@ -758,13 +960,14 @@ export const LudoLobby = () => {
     };
   }, [sessionId, isSoloAI, handleSocketEvent, playerId, playerName]);
 
-  // URL Query auto-join effect
+  // URL Query auto-join effect (Only triggers once on initial mount; never on return to lobby)
   useEffect(() => {
     const queryRoom = searchParams.get('room');
-    if (!queryRoom || view !== 'LOBBY') return;
+    if (!queryRoom || view !== 'LOBBY' || hasAutoJoinedRef.current) return;
+    hasAutoJoinedRef.current = true;
 
     const code = queryRoom.trim().toUpperCase();
-    setIsHost(false); // Guest via URL
+    setIsHost(false);
     getLudoRoomStatus(code)
       .then((statusRes) => {
         if (statusRes.status !== 'ABANDONED') {
@@ -808,23 +1011,26 @@ export const LudoLobby = () => {
     setIsHost(true);
     setMyColor('RED');
 
-    // Pick realistic names without [AI] label
     const pool = [...REALISTIC_NAMES].sort(() => Math.random() - 0.5);
     const slots = getSlotStatesForCount(playerCount);
     const activeSlots = { ...slots };
 
     const opponentNames = {
       RED: `${playerName}`,
-      GREEN: slots.GREEN === 'WAITING' ? (pool.pop() || 'Aarav_Sharma') : 'No Player',
-      YELLOW: slots.YELLOW === 'WAITING' ? (pool.pop() || 'Vikram_R') : 'No Player',
-      BLUE: slots.BLUE === 'WAITING' ? (pool.pop() || 'Sneha_Patel') : 'No Player',
+      GREEN: slots.GREEN === 'WAITING' ? pool.pop() || 'Aarav_Sharma' : 'No Player',
+      YELLOW: slots.YELLOW === 'WAITING' ? pool.pop() || 'Vikram_R' : 'No Player',
+      BLUE: slots.BLUE === 'WAITING' ? pool.pop() || 'Sneha_Patel' : 'No Player',
     };
 
     ALL_COLORS.forEach((c) => {
       if (slots[c] === 'WAITING') activeSlots[c] = 'ACTIVE';
     });
 
-    const opponentDisplay = playerCount === 2 ? opponentNames.YELLOW : `${opponentNames.YELLOW}, ${opponentNames.GREEN || ''}`;
+    const opponentDisplay =
+      playerCount === 2
+        ? opponentNames.YELLOW
+        : `${opponentNames.YELLOW}, ${opponentNames.GREEN || ''}`;
+
     setSlotStates(activeSlots);
     setPlayerNames(opponentNames);
     setCurrentTurn('RED');
@@ -876,12 +1082,14 @@ export const LudoLobby = () => {
     setRoomCode(res.roomCode);
     setSessionId(res.sessionId);
     setSlotStates(res.slotStates || getSlotStatesForCount(playerCount));
-    setPlayerNames(res.playerNames || {
-      RED: `${playerName} (Host)`,
-      GREEN: playerCount >= 3 ? 'Waiting for player...' : 'No Player',
-      YELLOW: 'Waiting for player...',
-      BLUE: playerCount === 4 ? 'Waiting for player...' : 'No Player',
-    });
+    setPlayerNames(
+      res.playerNames || {
+        RED: `${playerName} (Host)`,
+        GREEN: playerCount >= 3 ? 'Waiting for player...' : 'No Player',
+        YELLOW: 'Waiting for player...',
+        BLUE: playerCount === 4 ? 'Waiting for player...' : 'No Player',
+      }
+    );
     setView('WAITING_ROOM');
   };
 
@@ -902,7 +1110,7 @@ export const LudoLobby = () => {
       return;
     }
 
-    setIsHost(false); // Guest via Code
+    setIsHost(false);
     try {
       const statusRes = await getLudoRoomStatus(code);
       if (statusRes && (statusRes.status === 'ABANDONED' || statusRes.status === 'COMPLETED')) {
@@ -933,7 +1141,6 @@ export const LudoLobby = () => {
       setView('WAITING_ROOM');
       showToast(`Joined room ${code}! Click "I'm Ready" when prepared.`);
 
-      // Broadcast PLAYER_JOINED event immediately
       setTimeout(() => {
         ludoSocket.sendRoomEvent(sid, {
           type: 'PLAYER_JOINED',
@@ -954,7 +1161,6 @@ export const LudoLobby = () => {
       } else {
         showToast(err.message || `⚠️ Could not join room ${code}. Please verify code.`, 3500);
       }
-      // Stay in LOBBY view
     }
   };
 
@@ -967,27 +1173,55 @@ export const LudoLobby = () => {
     }
   };
 
+  // Requirement 5: Broadcast MATCH_DISBANDED when leaving match & safely wipe query param
   const confirmExitToLobby = () => {
+    hasAutoJoinedRef.current = true;
+    try {
+      setSearchParams({}, { replace: true });
+    } catch (e) {
+      console.warn('Failed to clear searchParams', e);
+    }
     setShowExitConfirmModal(false);
+    setIsMatchDisbanded(false);
+    voiceChat.disconnectVoice();
+
     if (!isSoloAI && sessionId) {
       ludoSocket.sendRoomEvent(sessionId, {
-        type: 'MATCH_FORFEITED',
-        eventType: 'MATCH_FORFEITED',
-        forfeiter: playerName,
-        message: `${playerName} forfeited and returned to lobby.`,
+        type: 'MATCH_DISBANDED',
+        eventType: 'MATCH_DISBANDED',
+        leaver: playerName,
+        message: `⚠️ Match Disbanded: ${playerName} has left the match.`,
       });
     }
+
     ludoSocket.disconnect();
     setView('LOBBY');
     setIsGameOver(false);
     setHasRolled(false);
     setMovableTokens([]);
+    setIsTokenMoving(false);
     setDiceValue(1);
     setRoomCode('');
     setSessionId('');
     setIsHost(false);
     setMyColor('RED');
   };
+
+  const handleExitToHome = () => {
+    confirmExitToLobby();
+    navigate('/', { replace: true });
+  };
+
+  // Android hardware back button handler
+  useEffect(() => {
+    const handlePopState = () => {
+      if (view === 'PLAYING' || view === 'WAITING_ROOM') {
+        confirmExitToLobby();
+      }
+    };
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, [view]);
 
   // Guest Toggle Ready Action
   const handleToggleReady = () => {
@@ -1018,6 +1252,7 @@ export const LudoLobby = () => {
     setRankings([]);
     setIsGameOver(false);
     setHasRolled(false);
+    setIsTokenMoving(false);
     setTurnTimer(30);
     setView('PLAYING');
     showToast('🚀 Match started! RED goes first.');
@@ -1045,6 +1280,7 @@ export const LudoLobby = () => {
           const isEligible =
             currentTurn === token.color &&
             hasRolled &&
+            !isTokenMoving &&
             movableTokens.includes(token.tokenId) &&
             (!isSoloAI || currentTurn === myColor);
 
@@ -1057,7 +1293,9 @@ export const LudoLobby = () => {
               }}
               title={`${token.tokenId} (${token.color})`}
             >
-              {token.tokenId}
+              {isEligible && <span className="ludo-king-pointer">👇</span>}
+              <span className="token-glyph-badge">{COLOR_GLYPHS[token.color]}</span>
+              <span className="token-id-text">{token.tokenId}</span>
             </div>
           );
         })}
@@ -1068,17 +1306,24 @@ export const LudoLobby = () => {
   // Render Yard Quadrant (6x6) with Inactive "X" Overlay when appropriate
   const renderYard = (color, yardClass) => {
     const slotState = slotStates[color] || 'INACTIVE_SETUP';
-    const isInactive = slotState === 'INACTIVE_SETUP' || slotState === 'OFFLINE' || slotState === 'NOT_AVAILABLE';
+    const isInactive =
+      slotState === 'INACTIVE_SETUP' ||
+      slotState === 'OFFLINE' ||
+      slotState === 'NOT_AVAILABLE';
 
     let inactiveLabel = 'No Player';
     if (slotState === 'OFFLINE') inactiveLabel = 'Offline';
     if (slotState === 'NOT_AVAILABLE') inactiveLabel = 'Unavailable';
 
     const yardTokens = tokens[color]?.filter((t) => t.step === -1) || [];
+    const isSpeaking = voiceChat.speakingPlayers[color];
 
     return (
-      <div className={`yard ${yardClass}`}>
-        <span className="yard-title-label">{color}</span>
+      <div className={`yard ${yardClass} ${isSpeaking ? 'speaking-halo' : ''}`}>
+        <span className="yard-title-label">
+          <span className="yard-glyph-icon">{COLOR_GLYPHS[color]}</span>
+          <span>{color}</span>
+        </span>
 
         {/* 4 Token circles in yard */}
         <div className="yard-inner-card">
@@ -1089,6 +1334,7 @@ export const LudoLobby = () => {
               tokenInYard &&
               currentTurn === color &&
               hasRolled &&
+              !isTokenMoving &&
               movableTokens.includes(tokId) &&
               (!isSoloAI || currentTurn === myColor);
 
@@ -1104,7 +1350,9 @@ export const LudoLobby = () => {
                     }}
                     title={tokId}
                   >
-                    {tokId}
+                    {isEligible && <span className="ludo-king-pointer">👇</span>}
+                    <span className="token-glyph-badge">{COLOR_GLYPHS[color]}</span>
+                    <span className="token-id-text">{tokId}</span>
                   </div>
                 )}
               </div>
@@ -1136,9 +1384,8 @@ export const LudoLobby = () => {
     );
   };
 
-  // Render single cell at row, col
+  // Render single cell at row, col with 3D elevated blocks design and blast effect
   const renderGridCell = (r, c) => {
-    // 4 Corner Yards
     if (r < 6 && c < 6) return null; // Blue Yard
     if (r < 6 && c > 8) return null; // Green Yard
     if (r > 8 && c < 6) return null; // Red Yard
@@ -1147,15 +1394,14 @@ export const LudoLobby = () => {
     // Center Home
     if (r >= 6 && r <= 8 && c >= 6 && c <= 8) return null;
 
-    // Check starting cells
     let cellExtraClass = '';
     let isSafeCell = false;
+    let arrowGlyph = null;
 
-    if (r === 13 && c === 6) { cellExtraClass = 'start-cell-red safe-cell'; isSafeCell = true; }
-    else if (r === 6 && c === 1) { cellExtraClass = 'start-cell-blue safe-cell'; isSafeCell = true; }
-    else if (r === 1 && c === 8) { cellExtraClass = 'start-cell-green safe-cell'; isSafeCell = true; }
-    else if (r === 8 && c === 13) { cellExtraClass = 'start-cell-yellow safe-cell'; isSafeCell = true; }
-    // Check safe star cells
+    if (r === 13 && c === 6) { cellExtraClass = 'start-cell-red safe-cell'; isSafeCell = true; arrowGlyph = '⬆️'; }
+    else if (r === 6 && c === 1) { cellExtraClass = 'start-cell-blue safe-cell'; isSafeCell = true; arrowGlyph = '➡️'; }
+    else if (r === 1 && c === 8) { cellExtraClass = 'start-cell-green safe-cell'; isSafeCell = true; arrowGlyph = '⬇️'; }
+    else if (r === 8 && c === 13) { cellExtraClass = 'start-cell-yellow safe-cell'; isSafeCell = true; arrowGlyph = '⬅️'; }
     else if (
       (r === 8 && c === 2) ||
       (r === 2 && c === 6) ||
@@ -1165,19 +1411,23 @@ export const LudoLobby = () => {
       cellExtraClass = 'safe-cell';
       isSafeCell = true;
     }
-    // Check Home Stretches
-    else if (c === 7 && r >= 9 && r <= 13) { cellExtraClass = 'home-stretch-red'; }
-    else if (c === 7 && r >= 1 && r <= 5) { cellExtraClass = 'home-stretch-green'; }
-    else if (r === 7 && c >= 1 && c <= 5) { cellExtraClass = 'home-stretch-blue'; }
-    else if (r === 7 && c >= 9 && c <= 13) { cellExtraClass = 'home-stretch-yellow'; }
+    // Home Stretches
+    else if (c === 7 && r >= 9 && r <= 13) { cellExtraClass = 'home-stretch-red'; arrowGlyph = '▲'; }
+    else if (c === 7 && r >= 1 && r <= 5) { cellExtraClass = 'home-stretch-green'; arrowGlyph = '▼'; }
+    else if (r === 7 && c >= 1 && c <= 5) { cellExtraClass = 'home-stretch-blue'; arrowGlyph = '►'; }
+    else if (r === 7 && c >= 9 && c <= 13) { cellExtraClass = 'home-stretch-yellow'; arrowGlyph = '◄'; }
+
+    const isBlasting = blastCell && blastCell.r === r && blastCell.c === c;
 
     return (
       <div
         key={`cell-${r}-${c}`}
-        className={`ludo-cell ${cellExtraClass}`}
+        className={`ludo-cell ${cellExtraClass} ${isBlasting ? 'cell-blast' : ''}`}
         style={{ gridRow: r + 1, gridColumn: c + 1 }}
       >
         {isSafeCell && <span className="safe-star-glyph">⭐</span>}
+        {arrowGlyph && <span className="cell-arrow-glyph">{arrowGlyph}</span>}
+        {isBlasting && <div className="blast-ring-fx" />}
         {renderTokensOnCell(r, c)}
       </div>
     );
@@ -1185,7 +1435,6 @@ export const LudoLobby = () => {
 
   // Render 3D Dice Face
   const renderDiceFace = (val) => {
-    // 3x3 grid pip positions
     const pips = {
       1: [4],
       2: [0, 8],
@@ -1226,14 +1475,26 @@ export const LudoLobby = () => {
 
   return (
     <div className="ludo-lobby-container">
-      {/* Breadcrumb Navigation */}
-      <nav className="ludo-breadcrumb" aria-label="Breadcrumb">
-        <Link to="/">Home</Link>
-        <span>/</span>
-        <Link to="/games">Games</Link>
-        <span>/</span>
-        <span className="ludo-breadcrumb-current">Ludo Royale</span>
-      </nav>
+      {/* Breadcrumb Navigation & Global Audio Bar */}
+      <div className="ludo-top-bar">
+        <nav className="ludo-breadcrumb" aria-label="Breadcrumb">
+          <Link to="/" onClick={() => setSearchParams({}, { replace: true })}>Home</Link>
+          <span>/</span>
+          <Link to="/games" onClick={() => setSearchParams({}, { replace: true })}>Games</Link>
+          <span>/</span>
+          <span className="ludo-breadcrumb-current">Ludo Royale</span>
+        </nav>
+
+        {/* Global Sound Toggle Button */}
+        <button
+          type="button"
+          className={`ludo-sound-btn ${isSoundMuted ? 'muted' : 'active'}`}
+          onClick={handleToggleSound}
+          title={isSoundMuted ? 'Enable Sound' : 'Mute Sound'}
+        >
+          <span>{isSoundMuted ? '🔈 Sound: OFF' : '🔊 Sound: ON'}</span>
+        </button>
+      </div>
 
       {/* Main Hero Header */}
       <section className="ludo-hero">
@@ -1244,7 +1505,7 @@ export const LudoLobby = () => {
         <h1 className="ludo-title">Ludo Royale</h1>
         <p className="ludo-tagline">
           The ultimate cyberpunk neon board showdown. Roll the dice, capture enemy tokens, race
-          through the safe star grid, and claim the championship podium!
+          through the 3D block safe grid, and claim the championship podium!
         </p>
 
         {/* View: LOBBY */}
@@ -1325,7 +1586,6 @@ export const LudoLobby = () => {
                 </p>
 
                 <div className="private-sub-options">
-                  {/* Sub-option 1: Create Room */}
                   <div className="private-sub-block">
                     <button
                       type="button"
@@ -1341,7 +1601,6 @@ export const LudoLobby = () => {
                     <span>OR JOIN BY CODE</span>
                   </div>
 
-                  {/* Sub-option 2: Join by Code */}
                   <div className="private-sub-block">
                     <div className="lobby-join-box card-join-box">
                       <div className="lobby-join-input-wrap">
@@ -1385,19 +1644,27 @@ export const LudoLobby = () => {
           <div className="ludo-modal">
             <div className="modal-header">
               <h3>Private Room: {roomCode}</h3>
-              <button
-                type="button"
-                className="modal-close-btn"
-                onClick={() => {
-                  setView('LOBBY');
-                  ludoSocket.disconnect();
-                }}
-              >
-                ✕
-              </button>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <button
+                  type="button"
+                  className="btn-solo-ludo"
+                  style={{ padding: '0.35rem 0.75rem', fontSize: '0.8rem' }}
+                  onClick={handleExitToHome}
+                  title="Exit to Home"
+                >
+                  🏠 Home
+                </button>
+                <button
+                  type="button"
+                  className="modal-close-btn"
+                  onClick={confirmExitToLobby}
+                  title="Leave Room & Back to Lobby"
+                >
+                  ✕
+                </button>
+              </div>
             </div>
 
-            {/* Room Code & Copy Link Card */}
             <div className="room-code-box">
               <div>
                 <div className="room-code-label">Room Code</div>
@@ -1414,7 +1681,6 @@ export const LudoLobby = () => {
               </button>
             </div>
 
-            {/* Prominent waiting alert banner if activeCount < 2 */}
             {activeCount < 2 && (
               <div className="waiting-room-alert-banner">
                 <span className="waiting-alert-text">
@@ -1432,16 +1698,26 @@ export const LudoLobby = () => {
                   state === 'INACTIVE_SETUP' ||
                   state === 'OFFLINE' ||
                   state === 'NOT_AVAILABLE';
-                const isJoined = !isInactive && (state === 'ACTIVE' || (playerNames[col] && !playerNames[col].includes('Waiting')));
+                const isJoined =
+                  !isInactive &&
+                  (state === 'ACTIVE' ||
+                    (playerNames[col] && !playerNames[col].includes('Waiting')));
                 const isReady = readyStates[col];
+                const isSpeaking = voiceChat.speakingPlayers[col];
 
                 return (
                   <div
                     key={col}
-                    className={`slot-card slot-${col.toLowerCase()} ${isInactive ? 'slot-inactive' : ''}`}
+                    className={`slot-card slot-${col.toLowerCase()} ${
+                      isInactive ? 'slot-inactive' : ''
+                    } ${isSpeaking ? 'slot-speaking' : ''}`}
                   >
-                    <div className={`slot-avatar ${isInactive ? 'inactive' : col.toLowerCase()}`}>
-                      {col[0]}
+                    <div
+                      className={`slot-avatar ${isInactive ? 'inactive' : col.toLowerCase()} ${
+                        isSpeaking ? 'speaking-avatar' : ''
+                      }`}
+                    >
+                      <span>{COLOR_GLYPHS[col]}</span>
                     </div>
                     <div className="slot-details">
                       <div className="slot-name">{playerNames[col] || col}</div>
@@ -1472,20 +1748,24 @@ export const LudoLobby = () => {
                   <div className="host-guidance-text">
                     {activeCount < 2
                       ? 'Waiting for at least 1 other player to join before starting.'
-                      : (!allReady
-                        ? 'Waiting for all joined players to mark themselves as Ready.'
-                        : 'All players are Ready! Press Start Match to begin.')}
+                      : !allReady
+                      ? 'Waiting for all joined players to mark themselves as Ready.'
+                      : 'All players are Ready! Press Start Match to begin.'}
                   </div>
                   <div className="waiting-modal-actions">
                     <button
                       type="button"
                       className="btn-solo-ludo"
-                      onClick={() => {
-                        setView('LOBBY');
-                        ludoSocket.disconnect();
-                      }}
+                      onClick={confirmExitToLobby}
                     >
-                      Leave Room
+                      🚪 Leave Room
+                    </button>
+                    <button
+                      type="button"
+                      className="btn-solo-ludo"
+                      onClick={handleExitToHome}
+                    >
+                      🏠 Exit to Home
                     </button>
                     <button
                       type="button"
@@ -1497,9 +1777,9 @@ export const LudoLobby = () => {
                       <span>
                         {activeCount < 2
                           ? 'Waiting for players to join...'
-                          : (!allReady
-                            ? 'Waiting for all players to be Ready...'
-                            : 'Start Match')}
+                          : !allReady
+                          ? 'Waiting for all players to be Ready...'
+                          : 'Start Match'}
                       </span>
                     </button>
                   </div>
@@ -1515,12 +1795,16 @@ export const LudoLobby = () => {
                     <button
                       type="button"
                       className="btn-solo-ludo"
-                      onClick={() => {
-                        setView('LOBBY');
-                        ludoSocket.disconnect();
-                      }}
+                      onClick={confirmExitToLobby}
                     >
-                      Leave Room
+                      🚪 Leave Room
+                    </button>
+                    <button
+                      type="button"
+                      className="btn-solo-ludo"
+                      onClick={handleExitToHome}
+                    >
+                      🏠 Exit to Home
                     </button>
                     <button
                       type="button"
@@ -1541,40 +1825,33 @@ export const LudoLobby = () => {
       {/* View: PLAYING - 15x15 Cyberpunk Arena */}
       {view === 'PLAYING' && (
         <main className="ludo-arena">
-          {/* Turn Indicator Strip */}
-          <div className="turn-indicator-strip">
+          {/* Header Controls HUD: Voice Chat & Audio & Turn Info */}
+          <div className="arena-hud-header">
+            {/* Turn Player Pill List */}
             <div className="turn-player-list">
               {ALL_COLORS.map((c) => {
                 const isActiveSlot = slotStates[c] === 'ACTIVE';
                 const isCurrentTurn = currentTurn === c;
+                const isSpeaking = voiceChat.speakingPlayers[c];
 
                 if (!isActiveSlot) return null;
 
                 return (
                   <div
                     key={c}
-                    className={`turn-player-pill pill-${c} ${isCurrentTurn ? 'active' : ''}`}
+                    className={`turn-player-pill pill-${c} ${isCurrentTurn ? 'active' : ''} ${
+                      isSpeaking ? 'speaking-active' : ''
+                    }`}
                   >
-                    <div
-                      className={`ludo-pulse-dot`}
-                      style={{
-                        backgroundColor:
-                          c === 'RED'
-                            ? '#ff3366'
-                            : c === 'GREEN'
-                            ? '#00ff88'
-                            : c === 'YELLOW'
-                            ? '#ffe600'
-                            : '#00f2fe',
-                      }}
-                    />
-                    <span>{playerNames[c] || c}</span>
+                    <span className="pill-glyph">{COLOR_GLYPHS[c]}</span>
+                    <span className="pill-name">{playerNames[c] || c}</span>
+                    {isSpeaking && <span className="pill-speak-icon">🎙️</span>}
                   </div>
                 );
               })}
             </div>
 
-            {/* 30s Countdown Timer Bar */}
+            {/* 30s Countdown Timer */}
             <div className="turn-timer-box">
               <span className={`timer-countdown ${turnTimer <= 5 ? 'warning' : ''}`}>
                 {turnTimer}s
@@ -1585,6 +1862,48 @@ export const LudoLobby = () => {
                   style={{ width: `${(turnTimer / 30) * 100}%` }}
                 />
               </div>
+            </div>
+
+            {/* Voice Chat Mesh Component in HUD */}
+            <div className="arena-voice-controls">
+              {!voiceChat.isVoiceConnected ? (
+                <button
+                  type="button"
+                  className="btn-voice-connect"
+                  onClick={voiceChat.connectVoice}
+                  disabled={isSoloAI}
+                  title={isSoloAI ? 'Voice chat is for multiplayer rooms' : 'Connect In-Room Voice Chat'}
+                >
+                  <span>🎙️ Voice Chat: Connect</span>
+                </button>
+              ) : (
+                <div className="voice-connected-bar">
+                  <button
+                    type="button"
+                    className={`btn-voice-toggle ${voiceChat.isMicMuted ? 'muted' : 'active'}`}
+                    onClick={voiceChat.toggleMic}
+                    title={voiceChat.isMicMuted ? 'Unmute Mic' : 'Mute Mic'}
+                  >
+                    <span>{voiceChat.isMicMuted ? '🔇 Mic: OFF' : '🎤 Mic: ON'}</span>
+                  </button>
+                  <button
+                    type="button"
+                    className={`btn-voice-toggle ${voiceChat.isDeafened ? 'muted' : 'active'}`}
+                    onClick={voiceChat.toggleDeafen}
+                    title={voiceChat.isDeafened ? 'Undeafen Speaker' : 'Deafen Speaker'}
+                  >
+                    <span>{voiceChat.isDeafened ? '🔇 Deafen: ON' : '🔊 Deafen: OFF'}</span>
+                  </button>
+                  <button
+                    type="button"
+                    className="btn-voice-disconnect"
+                    onClick={voiceChat.disconnectVoice}
+                    title="Disconnect Voice Chat"
+                  >
+                    <span>Disconnect</span>
+                  </button>
+                </div>
+              )}
             </div>
           </div>
 
@@ -1611,7 +1930,9 @@ export const LudoLobby = () => {
               <div
                 className={`neon-dice ${isRolling ? 'rolling' : ''}`}
                 onClick={() => {
-                  if (currentTurn === myColor || isSoloAI) handleRollDice();
+                  if ((currentTurn === myColor || isSoloAI) && !isTokenMoving) {
+                    handleRollDice();
+                  }
                 }}
                 title="Roll Dice"
               >
@@ -1624,20 +1945,28 @@ export const LudoLobby = () => {
                   isRolling ||
                   hasRolled ||
                   isGameOver ||
+                  isTokenMoving ||
                   (!isSoloAI && currentTurn !== myColor)
                 }
                 onClick={handleRollDice}
               >
-                {isRolling ? 'Rolling...' : `Roll (${diceValue})`}
+                {isRolling
+                  ? 'Rolling...'
+                  : isTokenMoving
+                  ? 'Moving...'
+                  : `Roll (${diceValue})`}
               </button>
             </div>
-            <button
-              type="button"
-              className="btn-solo-ludo"
-              onClick={handleExitMatchClick}
-            >
-              Exit to Lobby
-            </button>
+
+            <div className="controls-right-group">
+              <button
+                type="button"
+                className="btn-solo-ludo"
+                onClick={handleExitMatchClick}
+              >
+                Exit to Lobby
+              </button>
+            </div>
           </div>
         </main>
       )}
@@ -1668,6 +1997,29 @@ export const LudoLobby = () => {
                 onClick={confirmExitToLobby}
               >
                 Yes, Forfeit & Exit
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Requirement 5: Match Disbanded Modal */}
+      {isMatchDisbanded && (
+        <div className="ludo-modal-backdrop">
+          <div className="ludo-modal" style={{ maxWidth: '440px', textAlign: 'center' }}>
+            <h3 style={{ color: '#ff3366', margin: '0 0 0.8rem 0', fontSize: '1.4rem' }}>
+              ⚠️ Match Disbanded
+            </h3>
+            <p style={{ color: '#cbd5e1', fontSize: '0.95rem', lineHeight: '1.5', margin: '0 0 1.5rem 0' }}>
+              {disbandMessage || 'A player has left the match.'}
+            </p>
+            <div style={{ display: 'flex', justifyContent: 'center' }}>
+              <button
+                type="button"
+                className="btn-primary-ludo"
+                onClick={confirmExitToLobby}
+              >
+                Return to Lobby
               </button>
             </div>
           </div>
@@ -1725,8 +2077,10 @@ export const LudoLobby = () => {
                   setIsGameOver(false);
                   setCurrentTurn('RED');
                   setHasRolled(false);
+                  setIsTokenMoving(false);
                   setTurnTimer(30);
                   triggerCelebration();
+                  ludoAudio.playVictory();
                 }}
               >
                 Play Again
