@@ -19,11 +19,12 @@ const GameCard = ({ game }) => {
     route,
     minPlayers,
     maxPlayers,
-    isActive,
-    isMaintenance,
     thumbnailUrl,
     icon,
   } = game;
+
+  const isActive = Boolean(game.isActive ?? game.active);
+  const isMaintenance = Boolean(game.isMaintenance ?? game.maintenance);
 
   const displayIcon = icon || defaultIcons[gameId] || (gameMode === 'MULTIPLAYER' ? '⚔️' : '🕹️');
 

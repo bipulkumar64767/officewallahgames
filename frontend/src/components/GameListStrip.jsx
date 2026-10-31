@@ -8,6 +8,12 @@ const GameListStrip = ({ games = [], selectedMode = 'ALL' }) => {
   const filteredGames = games
     .filter((g) => {
       if (selectedMode === 'ALL') return true;
+      if (selectedMode === 'SINGLE_PLAYER') {
+        return (
+          g.gameMode === 'SINGLE_PLAYER' ||
+          ['tictactoe', 'ludo', 'wordgrid', 'connectdrop'].includes(g.gameId)
+        );
+      }
       return g.gameMode === selectedMode;
     })
     .sort((a, b) => (a.displayOrder || 99) - (b.displayOrder || 99));

@@ -19,7 +19,9 @@ public class GameMetadata {
     private String route;
     private int minPlayers;
     private int maxPlayers;
+    @com.fasterxml.jackson.annotation.JsonProperty("isActive")
     private boolean isActive;
+    @com.fasterxml.jackson.annotation.JsonProperty("isMaintenance")
     private boolean isMaintenance;
     private int displayOrder;
 }

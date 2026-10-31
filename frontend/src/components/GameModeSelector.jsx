@@ -1,9 +1,11 @@
 import './GameModeSelector.css';
 
 const GameModeSelector = ({ selectedMode, onSelectMode, games = [] }) => {
+  const isGameLive = (g) => Boolean((g.isActive ?? g.active) && !(g.isMaintenance ?? g.maintenance));
   const multiplayerCount = games.filter((g) => g.gameMode === 'MULTIPLAYER').length;
-  const singleplayerCount = games.filter((g) => g.gameMode === 'SINGLE_PLAYER').length;
-  const multiplayerLive = games.filter((g) => g.gameMode === 'MULTIPLAYER' && g.isActive && !g.isMaintenance).length;
+  const singleplayerCount = games.filter((g) => g.gameMode === 'SINGLE_PLAYER' || ['tictactoe', 'ludo', 'wordgrid', 'connectdrop'].includes(g.gameId)).length;
+  const multiplayerLive = games.filter((g) => g.gameMode === 'MULTIPLAYER' && isGameLive(g)).length;
+  const singleplayerLive = games.filter((g) => (g.gameMode === 'SINGLE_PLAYER' || ['tictactoe', 'ludo', 'wordgrid', 'connectdrop'].includes(g.gameId)) && isGameLive(g)).length;
 
   return (
     <div className="mode-selector-container">
@@ -48,7 +50,9 @@ const GameModeSelector = ({ selectedMode, onSelectMode, games = [] }) => {
           <div className="mode-details">
             <div className="mode-header">
               <h3 className="mode-title">Single Player Hub</h3>
-              <span className="mode-badge">{singleplayerCount} Games</span>
+              <span className="mode-badge">
+                {singleplayerLive > 0 ? `🟢 ${singleplayerLive} Live (Solo AI)` : `${singleplayerCount} Games`}
+              </span>
             </div>
             <p className="mode-tagline">Solo high-score challenges &amp; arcade classics</p>
           </div>
