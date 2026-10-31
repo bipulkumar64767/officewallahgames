@@ -8,7 +8,7 @@ import './Home.css';
 const Home = () => {
   const [games, setGames] = useState([]);
   const [selectedMode, setSelectedMode] = useState('ALL');
-  const [loading, setLoading] = useState(true);
+  const [_loading, setLoading] = useState(true);
 
   useEffect(() => {
     let isMounted = true;
