@@ -39,19 +39,26 @@ export const tictactoeApi = {
   },
 
   joinRoom: async (roomCode, playerId, playerName) => {
+    const cleanCode = (roomCode || 'TTT-DEMO').trim().toUpperCase();
     try {
       const response = await fetch(`${TTT_API_BASE_URL}/rooms/join`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ roomCode: roomCode.trim().toUpperCase(), playerId, playerName }),
+        body: JSON.stringify({ roomCode: cleanCode, playerId, playerName }),
       });
-      if (!response.ok) throw new Error(`HTTP error ${response.status}`);
-      const data = await response.json();
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || data.status === 'error') {
+        const errMsg = data.message || `HTTP error ${response.status}`;
+        throw new Error(errMsg);
+      }
       return data.data || data;
     } catch (err) {
+      const isRoomFullOrStarted = /full|maximum|already|started|completed|not found|cannot join/i.test(err.message || '');
+      if (isRoomFullOrStarted) {
+        throw err;
+      }
       console.warn('[TicTacToe] Backend unreachable at /rooms/join, using offline mock fallback:', err.message);
-      const cleanCode = (roomCode || 'TTT-DEMO').trim().toUpperCase();
-      const sessionId = `OWG_TTT_${Math.floor(10000 + Math.random() * 90000)}`;
+      const sessionId = `OWG_TTT_${cleanCode}`;
       return {
         sessionId,
         roomCode: cleanCode,

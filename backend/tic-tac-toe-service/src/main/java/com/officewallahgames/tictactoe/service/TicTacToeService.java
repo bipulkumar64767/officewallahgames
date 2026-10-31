@@ -94,8 +94,8 @@ public class TicTacToeService {
         }
 
         synchronized (session) {
-            if (session.getStatus() != GameStatus.WAITING_FOR_OPPONENT) {
-                throw new GameException("Room is not available for joining. Current status: " + session.getStatus());
+            if (session.getStatus() != GameStatus.WAITING_FOR_OPPONENT || session.getPlayerO() != null) {
+                throw new GameException("Room " + roomCode + " is already full! Maximum 2 players allowed.");
             }
 
             if (request.getPlayerId() != null && request.getPlayerId().equals(session.getPlayerX())) {

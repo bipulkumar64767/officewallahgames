@@ -105,8 +105,8 @@ public class ConnectDropService {
                 : "Player Yellow";
 
         synchronized (session) {
-            if (session.getStatus() != GameStatus.WAITING_FOR_OPPONENT) {
-                throw new GameException("Room is not available for joining. Current status: " + session.getStatus());
+            if (session.getStatus() != GameStatus.WAITING_FOR_OPPONENT || session.getPlayerYellow() != null) {
+                throw new GameException("Room " + roomCode + " is already full! Maximum 2 players allowed.");
             }
 
             if (playerId.equals(session.getPlayerRed())) {
@@ -120,7 +120,14 @@ public class ConnectDropService {
             session.setUpdatedAt(Instant.now());
         }
 
-        // Broadcast ROOM_READY event
+        // Broadcast PLAYER_JOINED and ROOM_READY events
+        ConnectDropEventDto joinEvent = ConnectDropEventDto.builder()
+                .eventType("PLAYER_JOINED")
+                .session(session)
+                .message(session.getPlayerYellowName() + " joined the game!")
+                .build();
+        messagingTemplate.convertAndSend("/topic/connectdrop/" + session.getSessionId(), joinEvent);
+
         ConnectDropEventDto event = ConnectDropEventDto.builder()
                 .eventType("ROOM_READY")
                 .session(session)

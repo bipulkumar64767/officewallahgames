@@ -85,12 +85,19 @@ export const joinLudoRoom = async ({ roomCode, playerId, playerName }) => {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ roomCode: cleanCode, playerId, playerName }),
     });
-    if (!response.ok) throw new Error(`HTTP error ${response.status}`);
-    const data = await response.json();
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok || data.status === 'error') {
+      const errMsg = data.message || `HTTP error ${response.status}`;
+      throw new Error(errMsg);
+    }
     return data.data || data;
   } catch (err) {
+    const isRoomFullOrStarted = /full|maximum|already|started|completed|not found|cannot join/i.test(err.message || '');
+    if (isRoomFullOrStarted) {
+      throw err;
+    }
     console.warn('[LudoAPI] Backend unreachable at /rooms/join, using offline mock fallback:', err.message);
-    const sessionId = `OWG_LDO_${Math.floor(10000 + Math.random() * 90000)}`;
+    const sessionId = `OWG_LDO_${cleanCode}`;
 
     return {
       sessionId,

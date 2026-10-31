@@ -188,6 +188,7 @@ export const LudoLobby = () => {
   const [rankings, setRankings] = useState([]); // Array of finished colors
   const [isGameOver, setIsGameOver] = useState(false);
   const [toastMessage, setToastMessage] = useState('');
+  const [showExitConfirmModal, setShowExitConfirmModal] = useState(false);
 
   // Refs for async & AI callbacks
   const stateRef = useRef({
@@ -430,6 +431,21 @@ export const LudoLobby = () => {
 
       // Check bonus turn: rolling 6, capturing an opponent, or reaching home grants bonus turn!
       const getsBonusTurn = (roll === 6 && stateRef.current.consecutiveSixes < 3) || capturesOpponent || reachesHome;
+      const activeOrder = getActiveTurnOrder(currentSlots);
+      const nextTurnColor = getsBonusTurn ? turnColor : activeOrder[(activeOrder.indexOf(turnColor) + 1) % activeOrder.length];
+
+      // Broadcast move to all players in the room for real-time synchronization
+      if (!stateRef.current.isSoloAI && stateRef.current.sessionId) {
+        ludoSocket.sendRoomEvent(stateRef.current.sessionId, {
+          type: 'TOKEN_MOVED',
+          eventType: 'TOKEN_MOVED',
+          color: turnColor,
+          tokenId,
+          tokens: newTokens,
+          nextTurn: nextTurnColor,
+          bonusTurn: getsBonusTurn,
+        });
+      }
 
       if (getsBonusTurn) {
         showToast(`⚡ Bonus turn for ${turnColor}! Roll again.`, 1500);
@@ -461,6 +477,25 @@ export const LudoLobby = () => {
       const nextSixes = rolledVal === 6 ? stateRef.current.consecutiveSixes + 1 : 0;
       setConsecutiveSixes(nextSixes);
 
+      // Compute legal moves
+      const legalMoves = computeMovableTokens(
+        stateRef.current.currentTurn,
+        rolledVal,
+        stateRef.current.tokens
+      );
+
+      // Broadcast dice roll to all players in the room for real-time synchronization
+      if (!isSoloAI && stateRef.current.sessionId) {
+        ludoSocket.sendRoomEvent(stateRef.current.sessionId, {
+          type: 'DICE_ROLLED',
+          eventType: 'DICE_ROLLED',
+          diceValue: rolledVal,
+          rollerColor: stateRef.current.currentTurn,
+          consecutiveSixes: nextSixes,
+          movableTokens: legalMoves,
+        });
+      }
+
       // Check 3 consecutive 6s forfeiture rule
       if (nextSixes >= 3) {
         showToast(`⚠️ ${stateRef.current.currentTurn} rolled three 6s — turn forfeited!`, 2500);
@@ -470,13 +505,6 @@ export const LudoLobby = () => {
         return;
       }
 
-      // Compute legal moves
-      const legalMoves = computeMovableTokens(
-        stateRef.current.currentTurn,
-        rolledVal,
-        stateRef.current.tokens
-      );
-
       if (legalMoves.length === 0) {
         showToast(`No legal moves for ${stateRef.current.currentTurn}! Turn passed.`, 1600);
         setTimeout(() => {
@@ -484,8 +512,6 @@ export const LudoLobby = () => {
         }, 1200);
       } else {
         setMovableTokens(legalMoves);
-        // If playing against AI or if it's AI turn, AI will handle move
-        // If only 1 move and current player, user can click or auto-move
       }
     }, 600);
   }, [isRolling, hasRolled, isGameOver, computeMovableTokens, passTurnToNext, showToast, isSoloAI, playerId]);
@@ -573,11 +599,23 @@ export const LudoLobby = () => {
   // Real-time WebSocket synchronization
   const handleSocketEvent = useCallback(
     (evt) => {
-      if (!evt || !evt.type) return;
+      if (!evt) return;
+      const eventType = evt.eventType || evt.type;
+      if (!eventType) return;
 
-      if (evt.type === 'PLAYER_JOINED') {
-        const color = evt.color;
-        const joinedName = evt.playerName || `Player (${color})`;
+      const data = evt.data || evt.session || evt;
+
+      if (eventType === 'PLAYER_JOINED' || eventType === 'ROOM_READY') {
+        if (data.slotStates) {
+          setSlotStates((prev) => ({ ...prev, ...data.slotStates }));
+        }
+        if (data.playerNames) {
+          setPlayerNames((prev) => ({ ...prev, ...data.playerNames }));
+        }
+
+        const color = evt.color || data.assignedColor || (data.players && Object.keys(data.players).find(c => data.players[c] === evt.playerId)) || 'YELLOW';
+        const joinedName = evt.playerName || (data.playerNames && data.playerNames[color]) || `Player (${color})`;
+
         setSlotStates((prev) => ({
           ...prev,
           [color]: 'ACTIVE',
@@ -588,7 +626,7 @@ export const LudoLobby = () => {
         }));
         setReadyStates((prev) => ({
           ...prev,
-          [color]: false,
+          [color]: prev[color] !== undefined ? prev[color] : false,
         }));
         showToast(`🎮 ${joinedName} joined the room as ${color}!`, 2500);
 
@@ -598,6 +636,7 @@ export const LudoLobby = () => {
             if (stateRef.current.sessionId) {
               ludoSocket.sendRoomEvent(stateRef.current.sessionId, {
                 type: 'ROOM_SYNC',
+                eventType: 'ROOM_SYNC',
                 slotStates: {
                   ...stateRef.current.slotStates,
                   [color]: 'ACTIVE',
@@ -609,19 +648,19 @@ export const LudoLobby = () => {
                 readyStates: {
                   ...stateRef.current.readyStates,
                   RED: true,
-                  [color]: false,
+                  [color]: stateRef.current.readyStates[color] || false,
                 },
                 playerCount: stateRef.current.playerCount,
               });
             }
           }, 150);
         }
-      } else if (evt.type === 'ROOM_SYNC') {
+      } else if (eventType === 'ROOM_SYNC') {
         if (evt.slotStates) setSlotStates(evt.slotStates);
         if (evt.playerNames) setPlayerNames(evt.playerNames);
         if (evt.readyStates) setReadyStates(evt.readyStates);
         if (evt.playerCount) setPlayerCount(evt.playerCount);
-      } else if (evt.type === 'PLAYER_READY') {
+      } else if (eventType === 'PLAYER_READY') {
         const { color, isReady } = evt;
         setReadyStates((prev) => ({
           ...prev,
@@ -629,7 +668,7 @@ export const LudoLobby = () => {
         }));
         const pName = stateRef.current.playerNames[color] || color;
         showToast(`${pName} is ${isReady ? 'READY 🟢' : 'NOT READY ⏳'}`, 2000);
-      } else if (evt.type === 'START_MATCH') {
+      } else if (eventType === 'START_MATCH') {
         // Starts game for EVERYONE in sync
         const activeSlots = { ...stateRef.current.slotStates };
         ALL_COLORS.forEach((c) => {
@@ -648,15 +687,38 @@ export const LudoLobby = () => {
         setTurnTimer(30);
         setView('PLAYING');
         showToast('🚀 Match started! RED goes first.', 3000);
-      } else if (evt.type === 'DICE_ROLLED') {
-        setDiceValue(evt.diceValue);
-        if (evt.movableTokens) setMovableTokens(evt.movableTokens);
-      } else if (evt.type === 'TOKEN_MOVED') {
-        if (evt.nextTurn) setCurrentTurn(evt.nextTurn);
-        if (evt.tokens) setTokens(evt.tokens);
-      } else if (evt.type === 'TURN_SKIPPED') {
-        showToast(`Turn skipped for ${evt.skippedColor}: ${evt.reason}`);
-        if (evt.nextTurn) setCurrentTurn(evt.nextTurn);
+      } else if (eventType === 'DICE_ROLLED') {
+        const val = evt.diceValue || (data && data.diceValue);
+        if (val) {
+          setDiceValue(val);
+          setHasRolled(true);
+        }
+        if (evt.rollerColor) {
+          showToast(`🎲 ${evt.rollerColor} rolled a ${val}!`, 1200);
+        }
+        if (evt.movableTokens || (data && data.movableTokenIds)) {
+          setMovableTokens(evt.movableTokens || data.movableTokenIds);
+        }
+        setTurnTimer(30);
+      } else if (eventType === 'TOKEN_MOVED') {
+        if (evt.tokens) {
+          setTokens(evt.tokens);
+        }
+        if (evt.nextTurn) {
+          setCurrentTurn(evt.nextTurn);
+        } else if (data && data.currentTurn) {
+          setCurrentTurn(data.currentTurn);
+        }
+        setHasRolled(false);
+        setMovableTokens([]);
+        setTurnTimer(30);
+      } else if (eventType === 'TURN_SKIPPED') {
+        showToast(`Turn skipped for ${evt.skippedColor || data.color}: ${evt.message || evt.reason}`);
+        if (evt.nextTurn || data.currentTurn) setCurrentTurn(evt.nextTurn || data.currentTurn);
+        setTurnTimer(30);
+      } else if (eventType === 'MATCH_FORFEITED') {
+        showToast(`⚠️ Match forfeited: ${evt.forfeiter || 'Opponent'} left the game.`, 4000);
+        setIsGameOver(true);
       }
     },
     [showToast]
@@ -833,30 +895,85 @@ export const LudoLobby = () => {
     setIsHost(false); // Guest via Code
     try {
       const statusRes = await getLudoRoomStatus(code);
-      if (statusRes && statusRes.status === 'ABANDONED') {
-        showToast(`⚠️ Room ${code} is inactive or abandoned.`);
+      if (statusRes && (statusRes.status === 'ABANDONED' || statusRes.status === 'COMPLETED')) {
+        showToast(`⚠️ Room ${code} is inactive or completed.`);
         return;
       }
 
       const res = await joinLudoRoom({ roomCode: code, playerId, playerName });
+      const assigned = res.assignedColor || 'YELLOW';
+      const sid = res.sessionId || `OWG_LDO_${code}`;
       setRoomCode(code);
-      setSessionId(res.sessionId || `OWG_LDO_${code}`);
-      setMyColor(res.assignedColor || 'YELLOW');
+      setSessionId(sid);
+      setMyColor(assigned);
       setPlayerCount(res.playerCount || 2);
-      setSlotStates(res.slotStates || getSlotStatesForCount(res.playerCount || 2));
-      if (res.playerNames) setPlayerNames(res.playerNames);
+
+      const nextSlots = res.slotStates || getSlotStatesForCount(res.playerCount || 2);
+      nextSlots[assigned] = 'ACTIVE';
+      setSlotStates(nextSlots);
+
+      const nextNames = res.playerNames || {
+        RED: 'Host Player',
+        [assigned]: playerName,
+      };
+      nextNames[assigned] = playerName;
+      setPlayerNames(nextNames);
+
       setReadyStates({ RED: true, GREEN: false, YELLOW: false, BLUE: false });
       setView('WAITING_ROOM');
-      showToast(`Joined room ${code}!`);
+      showToast(`Joined room ${code}! Click "I'm Ready" when prepared.`);
+
+      // Broadcast PLAYER_JOINED event immediately
+      setTimeout(() => {
+        ludoSocket.sendRoomEvent(sid, {
+          type: 'PLAYER_JOINED',
+          eventType: 'PLAYER_JOINED',
+          color: assigned,
+          playerId,
+          playerName,
+        });
+      }, 350);
     } catch (err) {
-      console.warn('Failed to query or join room, fallback to waiting room:', err);
-      setRoomCode(code);
-      setSessionId(`OWG_LDO_${code}`);
-      setMyColor('YELLOW');
-      setReadyStates({ RED: true, GREEN: false, YELLOW: false, BLUE: false });
-      setView('WAITING_ROOM');
-      showToast(`Joined room ${code}!`);
+      console.warn('Failed to join room:', err);
+      const isFull = /full|maximum|already/i.test(err.message || '');
+      if (isFull) {
+        showToast(`⚠️ Room is full! Maximum players already joined.`, 4000);
+      } else {
+        showToast(err.message || `⚠️ Could not join room ${code}. Please verify code.`, 3500);
+      }
+      // Stay in LOBBY view
     }
+  };
+
+  // Exit match controls
+  const handleExitMatchClick = () => {
+    if (view === 'PLAYING' && !isGameOver) {
+      setShowExitConfirmModal(true);
+    } else {
+      confirmExitToLobby();
+    }
+  };
+
+  const confirmExitToLobby = () => {
+    setShowExitConfirmModal(false);
+    if (!isSoloAI && sessionId) {
+      ludoSocket.sendRoomEvent(sessionId, {
+        type: 'MATCH_FORFEITED',
+        eventType: 'MATCH_FORFEITED',
+        forfeiter: playerName,
+        message: `${playerName} forfeited and returned to lobby.`,
+      });
+    }
+    ludoSocket.disconnect();
+    setView('LOBBY');
+    setIsGameOver(false);
+    setHasRolled(false);
+    setMovableTokens([]);
+    setDiceValue(1);
+    setRoomCode('');
+    setSessionId('');
+    setIsHost(false);
+    setMyColor('RED');
   };
 
   // Guest Toggle Ready Action
@@ -1504,12 +1621,44 @@ export const LudoLobby = () => {
             <button
               type="button"
               className="btn-solo-ludo"
-              onClick={() => setView('LOBBY')}
+              onClick={handleExitMatchClick}
             >
               Exit to Lobby
             </button>
           </div>
         </main>
+      )}
+
+      {/* Exit Match in Progress Confirmation Modal */}
+      {showExitConfirmModal && (
+        <div className="ludo-modal-backdrop">
+          <div className="ludo-modal" style={{ maxWidth: '420px', textAlign: 'center' }}>
+            <h3 style={{ color: '#ff3366', margin: '0 0 0.8rem 0', fontSize: '1.4rem' }}>
+              ⚠️ Exit Active Match?
+            </h3>
+            <p style={{ color: '#cbd5e1', fontSize: '0.95rem', lineHeight: '1.5', margin: '0 0 1.5rem 0' }}>
+              Are you sure you want to forfeit and leave? Leaving while a match is running will end the game for all players in this room.
+            </p>
+            <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'center' }}>
+              <button
+                type="button"
+                className="btn-primary-ludo"
+                style={{ background: 'rgba(255, 255, 255, 0.1)', color: '#fff' }}
+                onClick={() => setShowExitConfirmModal(false)}
+              >
+                Keep Playing
+              </button>
+              <button
+                type="button"
+                className="btn-primary-ludo"
+                style={{ background: 'linear-gradient(90deg, #ff3366, #ff0055)', color: '#fff' }}
+                onClick={confirmExitToLobby}
+              >
+                Yes, Forfeit & Exit
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* In-Game Toast Banner */}

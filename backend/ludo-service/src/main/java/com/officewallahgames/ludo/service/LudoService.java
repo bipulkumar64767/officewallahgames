@@ -128,7 +128,7 @@ public class LudoService {
             }
 
             if (session.getStatus() != GameStatus.WAITING_FOR_PLAYERS) {
-                throw new GameException("Game has already started or completed");
+                throw new GameException("Room " + request.getRoomCode() + " is already full! Maximum players already joined.");
             }
 
             // Find next WAITING color in turn order
@@ -141,7 +141,7 @@ public class LudoService {
             }
 
             if (assignedColor == null) {
-                throw new GameException("Room " + request.getRoomCode() + " is already full");
+                throw new GameException("Room " + request.getRoomCode() + " is already full! Maximum players already joined.");
             }
 
             String playerName = (request.getPlayerName() != null && !request.getPlayerName().isBlank())
@@ -157,17 +157,19 @@ public class LudoService {
             boolean allJoined = session.getTurnOrder().stream()
                     .allMatch(c -> session.getSlotStates().get(c) == SlotState.ACTIVE);
 
+            // Always broadcast PLAYER_JOINED first so host and all clients register the joined player immediately
+            LudoEventDto joinEvent = LudoEventDto.of("PLAYER_JOINED", session, playerName + " joined as " + assignedColor);
+            messagingTemplate.convertAndSend("/topic/ludo/" + sessionId, joinEvent);
+
             if (allJoined) {
                 session.setStatus(GameStatus.ACTIVE);
                 session.setCurrentTurn(PlayerColor.RED);
                 session.setTurnStartedAt(System.currentTimeMillis());
 
-                LudoEventDto event = LudoEventDto.of("ROOM_READY", session, "All players joined! Ludo Royale showdown begins.");
-                messagingTemplate.convertAndSend("/topic/ludo/" + sessionId, event);
+                LudoEventDto readyEvent = LudoEventDto.of("ROOM_READY", session, "All players joined! Ludo Royale showdown begins.");
+                messagingTemplate.convertAndSend("/topic/ludo/" + sessionId, readyEvent);
                 log.info("Room {} is now full and ACTIVE!", normalizedCode);
             } else {
-                LudoEventDto event = LudoEventDto.of("PLAYER_JOINED", session, playerName + " joined as " + assignedColor);
-                messagingTemplate.convertAndSend("/topic/ludo/" + sessionId, event);
                 log.info("Player {} joined room {} as {}", request.getPlayerId(), normalizedCode, assignedColor);
             }
 

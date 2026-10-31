@@ -103,6 +103,7 @@ export const WordGridLobby = () => {
   const [copiedLink, setCopiedLink] = useState(false);
   const [joinCodeInput, setJoinCodeInput] = useState('');
   const [isJoining, setIsJoining] = useState(false);
+  const [showExitConfirmModal, setShowExitConfirmModal] = useState(false);
 
   // Quick Match Matchmaking State
   const [isSearchingMatch, setIsSearchingMatch] = useState(false);
@@ -443,9 +444,11 @@ export const WordGridLobby = () => {
   // Handle WebSocket Event Subscriptions
   const handleSocketEvent = useCallback(
     (event) => {
-      if (!event || !event.type) return;
+      if (!event) return;
+      const eventType = event.type || event.eventType;
+      if (!eventType) return;
 
-      switch (event.type) {
+      switch (eventType) {
         case 'PLAYER_JOINED': {
           setSlotStates((prev) => ({
             ...prev,
@@ -583,6 +586,11 @@ export const WordGridLobby = () => {
           if (event.rankings) setGameOverRankings(event.rankings);
           break;
         }
+        case 'MATCH_FORFEITED': {
+          showToast(`⚠️ Match forfeited: ${event.forfeiter || 'Opponent'} left the game.`, 'info');
+          setIsGameOver(true);
+          break;
+        }
         default:
           break;
       }
@@ -613,6 +621,13 @@ export const WordGridLobby = () => {
       if (!isSoloAI && sessionId) {
         const activeColor = PLAYER_METADATA[mySlot].colorName.toUpperCase();
         wordgridSocket.placeLetter(sessionId, user?.userId || mySlot, activeColor, cell.row, cell.col, letter);
+        wordgridSocket.sendRoomEvent(sessionId, {
+          type: 'LETTER_PLACED',
+          row: cell.row,
+          col: cell.col,
+          letter,
+          slot: mySlot,
+        });
       }
 
       showToast(`Placed letter "${letter.toUpperCase()}". Trace a word or Fast Proceed!`, 'info', 2000);
@@ -889,7 +904,12 @@ export const WordGridLobby = () => {
       setJoinCodeInput('');
     } catch (err) {
       console.warn('Failed to join room:', err);
-      showToast(`⚠️ Error joining room ${code}: ${err.message || 'Network error'}`, 'error');
+      const isFull = /full|maximum|already/i.test(err.message || '');
+      if (isFull) {
+        showToast('⚠️ Room is full! Maximum players already joined.', 'error', 4000);
+      } else {
+        showToast(`⚠️ Error joining room ${code}: ${err.message || 'Network error'}`, 'error');
+      }
     } finally {
       setIsJoining(false);
     }
@@ -1087,6 +1107,15 @@ export const WordGridLobby = () => {
           PLAYER_METADATA[activeSlot].colorName.toUpperCase(),
           pathPayload
         );
+        wordgridSocket.sendRoomEvent(sessionId, {
+          type: 'WORD_RESULT',
+          slot: activeSlot,
+          word: spelled,
+          valid: true,
+          pointsAwarded: pts,
+          cells: pathPayload,
+          scores: nextScores,
+        });
       }
 
       if (!checkGameOver(updatedGrid, nextScores)) {
@@ -1120,8 +1149,25 @@ export const WordGridLobby = () => {
     advanceTurn(`⏩ Turn skipped by ${playerNames[currentTurn]}`);
   };
 
+  // Exit match handler
+  const handleExitMatchClick = () => {
+    if (view === 'ARENA' && !isGameOver) {
+      setShowExitConfirmModal(true);
+    } else {
+      confirmExitToLobby();
+    }
+  };
+
   // Reset to Lobby
-  const handleBackToLobby = () => {
+  const confirmExitToLobby = () => {
+    setShowExitConfirmModal(false);
+    if (!isSoloAI && sessionId && view === 'ARENA' && !isGameOver) {
+      wordgridSocket.sendRoomEvent(sessionId, {
+        type: 'MATCH_FORFEITED',
+        eventType: 'MATCH_FORFEITED',
+        forfeiter: playerNames[mySlot] || mySlot,
+      });
+    }
     wordgridSocket.disconnect();
     setView('LOBBY');
     setIsGameOver(false);
@@ -1144,10 +1190,41 @@ export const WordGridLobby = () => {
         ))}
       </div>
 
+      {/* Exit Match Confirmation Modal */}
+      {showExitConfirmModal && (
+        <div className="wgb-modal-overlay">
+          <div className="wgb-room-modal" style={{ maxWidth: '420px', textAlign: 'center' }}>
+            <h3 style={{ color: '#ff3366', margin: '0 0 0.8rem 0', fontSize: '1.4rem' }}>
+              ⚠️ Exit Active Match?
+            </h3>
+            <p style={{ color: '#94a3b8', fontSize: '0.95rem', lineHeight: '1.5', margin: '0 0 1.5rem 0' }}>
+              Are you sure you want to forfeit and leave? Leaving while a match is running will end the battle for all players.
+            </p>
+            <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'center' }}>
+              <button
+                type="button"
+                className="wgb-btn-outline"
+                onClick={() => setShowExitConfirmModal(false)}
+              >
+                Keep Playing
+              </button>
+              <button
+                type="button"
+                className="wgb-btn-primary"
+                style={{ background: 'linear-gradient(90deg, #ff3366, #ff007f)' }}
+                onClick={confirmExitToLobby}
+              >
+                Yes, Forfeit & Exit
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Header Bar */}
       <header className="wgb-header">
         {view === 'ARENA' ? (
-          <button className="wgb-back-link" onClick={handleBackToLobby}>
+          <button className="wgb-back-link" onClick={handleExitMatchClick}>
             ← Exit to Lobby
           </button>
         ) : (

@@ -45,6 +45,7 @@ const TicTacToeLobby = () => {
   const [playerXName, setPlayerXName] = useState('Player X');
   const [playerOName, setPlayerOName] = useState('Player O');
   const [isAiOpponent, setIsAiOpponent] = useState(false);
+  const [showExitConfirmModal, setShowExitConfirmModal] = useState(false);
 
   // Quick match countdown
   const [isSearching, setIsSearching] = useState(false);
@@ -169,11 +170,16 @@ const TicTacToeLobby = () => {
   const handleSocketMessage = useCallback(
     (payload) => {
       if (!payload) return;
+      const eventType = payload.eventType || payload.type;
+      const session = payload.session || {};
+      const serverBoard = session.board || payload.board;
+      const nextTurn = session.currentTurn || payload.nextTurn;
 
-      if (payload.type === 'PLAYER_JOINED') {
+      if (eventType === 'PLAYER_JOINED') {
         // Someone joined the private room
-        if (payload.playerId !== playerIdRef.current) {
-          const guestName = payload.playerName || payload.playerO || 'Challenger';
+        const incomingPlayerId = payload.playerId || (session.playerO);
+        if (incomingPlayerId !== playerIdRef.current) {
+          const guestName = payload.playerName || session.playerOName || payload.playerO || 'Challenger';
           setPlayerOName(guestName);
           setOpponentJoined(true);
           setStatusMessage(`${guestName} joined the room!`);
@@ -182,16 +188,17 @@ const TicTacToeLobby = () => {
           if (isHostRef.current) {
             tictactoeSocket.sendRoomEvent(sessionIdRef.current, {
               type: 'HOST_INFO',
+              eventType: 'HOST_INFO',
               playerName: playerNameRef.current,
               playerId: playerIdRef.current,
             });
           }
         }
-      } else if (payload.type === 'HOST_INFO') {
+      } else if (eventType === 'HOST_INFO') {
         if (!isHostRef.current && payload.playerName) {
           setPlayerXName(payload.playerName);
         }
-      } else if (payload.type === 'PLAYER_READY') {
+      } else if (eventType === 'PLAYER_READY') {
         if (payload.playerId !== playerIdRef.current) {
           setOpponentReady(Boolean(payload.isReady));
           setStatusMessage(
@@ -200,7 +207,7 @@ const TicTacToeLobby = () => {
               : `${payload.playerName || 'Opponent'} is not ready.`
           );
         }
-      } else if (payload.type === 'START_MATCH') {
+      } else if (eventType === 'START_MATCH') {
         // Transition both host and guest immediately into PLAYING
         setBoard(INITIAL_BOARD);
         setCurrentTurn('X');
@@ -214,38 +221,45 @@ const TicTacToeLobby = () => {
             ? 'Match started! Your move (X).'
             : 'Match started! Host moves first (X).'
         );
-      } else if (payload.type === 'MOVE_MADE' || payload.position !== undefined) {
-        const { position, symbol, board: serverBoard } = payload;
+      } else if (eventType === 'MOVE_MADE' || eventType === 'MOVE' || payload.position !== undefined) {
         if (serverBoard && Array.isArray(serverBoard)) {
           setBoard(serverBoard);
-          const outcome = checkWinner(serverBoard);
-          if (outcome) {
+          const outcome = session.winner
+            ? { winner: session.winner, winningPattern: session.winningPattern }
+            : checkWinner(serverBoard);
+          if (outcome && outcome.winner) {
             handleGameOver(outcome);
             return;
           }
-        } else if (position !== undefined && symbol) {
+        } else if (payload.position !== undefined && payload.symbol) {
           setBoard((prev) => {
             const next = [...prev];
-            next[position] = symbol;
+            next[payload.position] = payload.symbol;
             const outcome = checkWinner(next);
-            if (outcome) {
+            if (outcome && outcome.winner) {
               handleGameOver(outcome);
             }
             return next;
           });
         }
         setTurnTimer(30);
-        if (payload.nextTurn) {
-          setCurrentTurn(payload.nextTurn);
+        if (nextTurn) {
+          setCurrentTurn(nextTurn);
         } else {
           setCurrentTurn((prev) => (prev === 'X' ? 'O' : 'X'));
         }
-      } else if (payload.type === 'GAME_OVER') {
+      } else if (eventType === 'GAME_OVER') {
         handleGameOver({
-          winner: payload.winner,
-          winningPattern: payload.winningPattern,
+          winner: payload.winner || session.winner,
+          winningPattern: payload.winningPattern || session.winningPattern,
         });
-      } else if (payload.type === 'REMATCH_ACCEPTED' || payload.type === 'REMATCH_START') {
+      } else if (eventType === 'MATCH_FORFEITED') {
+        setStatusMessage(`⚠️ ${payload.forfeiter || 'Opponent'} forfeited the match.`);
+        handleGameOver({
+          winner: mySymbolRef.current,
+          winningPattern: null,
+        });
+      } else if (eventType === 'REMATCH_ACCEPTED' || eventType === 'REMATCH_START') {
         restartGame();
       }
     },
@@ -420,7 +434,12 @@ const TicTacToeLobby = () => {
         setStatusMessage(`Joined room ${code}! Click "I'm Ready" when prepared.`);
       } catch (err) {
         console.error('Join room error:', err);
-        setStatusMessage('Could not join room. Check the code and try again.');
+        const isFull = /full|maximum|already/i.test(err.message || '');
+        if (isFull) {
+          setStatusMessage('⚠️ Room is full! Maximum 2 players already joined.');
+        } else {
+          setStatusMessage(err.message || 'Could not join room. Check the code and try again.');
+        }
       } finally {
         setLoading(false);
       }
@@ -470,29 +489,56 @@ const TicTacToeLobby = () => {
     setBoard(newBoard);
     setTurnTimer(30);
 
+    const outcome = checkWinner(newBoard);
+    const nextTurn = mySymbol === 'X' ? 'O' : 'X';
+    setCurrentTurn(nextTurn);
+
     if (!isAiOpponent && sessionId) {
       tictactoeSocket.sendMove(sessionId, playerId, index, mySymbol);
+      // Direct peer broadcast for sub-50ms synchronized UI across both screens
+      tictactoeSocket.sendRoomEvent(sessionId, {
+        type: 'MOVE_MADE',
+        eventType: 'MOVE_MADE',
+        position: index,
+        symbol: mySymbol,
+        nextTurn,
+        board: newBoard,
+        turnTimer: 30,
+      });
     }
 
-    const outcome = checkWinner(newBoard);
     if (outcome) {
       handleGameOver(outcome);
       return;
     }
-
-    const nextTurn = mySymbol === 'X' ? 'O' : 'X';
-    setCurrentTurn(nextTurn);
 
     if (isAiOpponent) {
       scheduleAiMove(newBoard, nextTurn);
     }
   };
 
+  // Exit match handler with confirmation
+  const handleExitMatchClick = () => {
+    if (view === 'PLAYING' && !isGameOver) {
+      setShowExitConfirmModal(true);
+    } else {
+      returnToLobby();
+    }
+  };
+
   // Return to Lobby
   const returnToLobby = () => {
+    setShowExitConfirmModal(false);
     if (searchTimerRef.current) {
       clearInterval(searchTimerRef.current);
       searchTimerRef.current = null;
+    }
+    if (!isAiOpponent && sessionId && view === 'PLAYING' && !isGameOver) {
+      tictactoeSocket.sendRoomEvent(sessionId, {
+        type: 'MATCH_FORFEITED',
+        eventType: 'MATCH_FORFEITED',
+        forfeiter: playerName,
+      });
     }
     tictactoeSocket.disconnect();
     setView('LOBBY');
@@ -959,7 +1005,7 @@ const TicTacToeLobby = () => {
             <button
               type="button"
               className="ctrl-btn ctrl-leave"
-              onClick={returnToLobby}
+              onClick={handleExitMatchClick}
               title="Leave match"
             >
               🚪 Exit to Lobby
@@ -968,6 +1014,35 @@ const TicTacToeLobby = () => {
               <span className="room-id-tag">Room: {roomCode}</span>
             )}
           </div>
+
+          {/* EXIT CONFIRMATION MODAL */}
+          {showExitConfirmModal && (
+            <div className="game-over-overlay">
+              <div className="game-over-modal modal-defeat" style={{ maxWidth: '420px', textAlign: 'center' }}>
+                <div className="game-over-icon">⚠️</div>
+                <h2 className="game-over-headline" style={{ color: '#ff007f' }}>Exit Match?</h2>
+                <p className="game-over-desc">
+                  Are you sure you want to forfeit and exit? Exiting an active match ends the game for both players.
+                </p>
+                <div className="game-over-actions">
+                  <button
+                    type="button"
+                    className="mode-btn btn-neon-cyan"
+                    onClick={() => setShowExitConfirmModal(false)}
+                  >
+                    Keep Playing
+                  </button>
+                  <button
+                    type="button"
+                    className="mode-btn btn-neon-magenta"
+                    onClick={returnToLobby}
+                  >
+                    Yes, Forfeit & Exit
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* GAME OVER MODAL */}
           {isGameOver && (

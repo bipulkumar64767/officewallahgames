@@ -132,7 +132,7 @@ public class WordGridService {
         }
 
         if (session.getStatus() != GameStatus.WAITING_FOR_PLAYERS) {
-            throw new GameException("Game has already started or is completed");
+            throw new GameException("Room " + cleanCode + " is already full! Maximum players already joined.");
         }
 
         String playerId = (request.getPlayerId() != null && !request.getPlayerId().isBlank())
@@ -152,13 +152,22 @@ public class WordGridService {
         }
 
         if (assignedColor == null) {
-            throw new GameException("Room is full");
+            throw new GameException("Room " + cleanCode + " is already full! Maximum players already joined.");
         }
 
         session.getPlayers().put(assignedColor, playerId);
         session.getPlayerNames().put(assignedColor, playerName);
         session.getSlotStates().put(assignedColor, SlotState.ACTIVE);
         session.setUpdatedAt(System.currentTimeMillis());
+
+        // Always broadcast PLAYER_JOINED first so host registers player
+        broadcastEvent(session, WordGridEventDto.builder()
+                .type("PLAYER_JOINED")
+                .session(session)
+                .color(assignedColor)
+                .message(playerName + " joined as " + assignedColor)
+                .timestamp(System.currentTimeMillis())
+                .build());
 
         // Check if all slots are filled
         boolean allFilled = true;
@@ -177,14 +186,6 @@ public class WordGridService {
                     .session(session)
                     .color(assignedColor)
                     .message("All players joined. Game has started! Turn: " + session.getCurrentTurn())
-                    .timestamp(System.currentTimeMillis())
-                    .build());
-        } else {
-            broadcastEvent(session, WordGridEventDto.builder()
-                    .type("PLAYER_JOINED")
-                    .session(session)
-                    .color(assignedColor)
-                    .message(playerName + " joined as " + assignedColor)
                     .timestamp(System.currentTimeMillis())
                     .build());
         }

@@ -99,6 +99,7 @@ const ConnectDropLobby = () => {
   const [copySuccess, setCopySuccess] = useState(false);
   const [loading, setLoading] = useState(false);
   const [soundEnabled, setSoundEnabled] = useState(true);
+  const [showExitConfirmModal, setShowExitConfirmModal] = useState(false);
 
   // Synchronized refs for timers and WS callbacks
   const gridRef = useRef(grid);
@@ -256,6 +257,13 @@ const ConnectDropLobby = () => {
     // If online multiplayer without local AI opponent, publish through WebSocket
     if (!isAiOpponent && sessionId) {
       connectdropSocket.dropDisc(sessionId, playerId, col);
+      connectdropSocket.sendRoomEvent(sessionId, {
+        type: 'DISC_DROPPED',
+        eventType: 'DISC_DROPPED',
+        column: col,
+        color: myColor,
+        playerId,
+      });
     }
 
     // Always perform the drop locally for responsive immediate action
@@ -325,9 +333,11 @@ const ConnectDropLobby = () => {
   const handleSocketMessage = useCallback(
     (payload) => {
       if (!payload) return;
+      const eventType = payload.eventType || payload.type;
+      const session = payload.session || {};
 
       // 1. START MATCH event -> both players transition to PLAYING immediately
-      if (payload.type === 'START_MATCH') {
+      if (eventType === 'START_MATCH') {
         setView('PLAYING');
         setTurnTimer(TURN_TIME_LIMIT);
         setStatusMessage('Match started! RED drops first.');
@@ -335,9 +345,9 @@ const ConnectDropLobby = () => {
         return;
       }
 
-      // 2. PLAYER JOINED event
-      if (payload.type === 'PLAYER_JOINED') {
-        const guestName = payload.playerName || payload.playerYellowName || 'Challenger';
+      // 2. PLAYER JOINED / ROOM_READY event
+      if (eventType === 'PLAYER_JOINED' || eventType === 'ROOM_READY') {
+        const guestName = payload.playerName || session.playerYellowName || payload.playerYellowName || 'Challenger';
         setPlayerYellowName(guestName);
         setOpponentJoined(true);
         showToast(`Challenger ${guestName} joined the room!`, 'info');
@@ -346,6 +356,7 @@ const ConnectDropLobby = () => {
         if (isHostRef.current && sessionIdRef.current) {
           connectdropSocket.sendRoomEvent(sessionIdRef.current, {
             type: 'HOST_ACK',
+            eventType: 'HOST_ACK',
             playerRedName: playerName,
           });
         }
@@ -353,7 +364,7 @@ const ConnectDropLobby = () => {
       }
 
       // 3. HOST ACK event (guest receives host name confirmation)
-      if (payload.type === 'HOST_ACK') {
+      if (eventType === 'HOST_ACK') {
         if (payload.playerRedName) {
           setPlayerRedName(payload.playerRedName);
         }
@@ -362,7 +373,7 @@ const ConnectDropLobby = () => {
       }
 
       // 4. PLAYER READY event
-      if (payload.type === 'PLAYER_READY') {
+      if (eventType === 'PLAYER_READY') {
         if (payload.playerId !== playerId) {
           const readyState = Boolean(payload.isReady);
           setOpponentReady(readyState);
@@ -375,17 +386,26 @@ const ConnectDropLobby = () => {
         return;
       }
 
-      // 5. DISC DROPPED event (Opponent move)
-      if (payload.type === 'DISC_DROPPED' || payload.column !== undefined) {
-        const { column, color, playerId: eventPlayerId } = payload;
+      // 5. DISC DROPPED / MOVE_MADE event (Opponent move)
+      if (eventType === 'DISC_DROPPED' || eventType === 'MOVE_MADE' || payload.column !== undefined) {
+        const column = payload.column !== undefined ? payload.column : session.lastMoveColumn;
+        const color = payload.color || session.lastMoveColor || (myColorRef.current === 'RED' ? 'YELLOW' : 'RED');
+        const eventPlayerId = payload.playerId;
         if (eventPlayerId !== playerId && column !== undefined) {
-          executeDrop(column, color || (myColorRef.current === 'RED' ? 'YELLOW' : 'RED'));
+          executeDrop(column, color);
         }
         return;
       }
 
-      // 6. REMATCH event
-      if (payload.type === 'REMATCH_REQUESTED' || payload.type === 'RESTART_GAME') {
+      // 6. MATCH FORFEITED
+      if (eventType === 'MATCH_FORFEITED') {
+        showToast(`⚠️ Match forfeited: ${payload.forfeiter || 'Opponent'} left the game.`, 'info');
+        setIsGameOver(true);
+        return;
+      }
+
+      // 7. REMATCH event
+      if (eventType === 'REMATCH_REQUESTED' || eventType === 'RESTART_GAME') {
         restartGame();
         showToast('Rematch accepted! New round started.', 'info');
       }
@@ -603,13 +623,51 @@ const ConnectDropLobby = () => {
         showToast(`Joined room ${code}! Mark as Ready to start.`, 'success');
       } catch (err) {
         console.warn('Join room error:', err);
-        showToast('Failed to join room. Verify code and try again.', 'warning');
+        const isFull = /full|maximum|already/i.test(err.message || '');
+        if (isFull) {
+          showToast('⚠️ Room is full! Maximum 2 players already joined.', 'warning');
+        } else {
+          showToast(err.message || 'Failed to join room. Verify code and try again.', 'warning');
+        }
       } finally {
         setLoading(false);
       }
     },
     [joinCodeInput, playerId, playerName, handleSocketMessage, showToast]
   );
+
+  // Exit Match Handler
+  const handleExitMatchClick = () => {
+    if (view === 'PLAYING' && !isGameOver) {
+      setShowExitConfirmModal(true);
+    } else {
+      confirmExitToLobby();
+    }
+  };
+
+  const confirmExitToLobby = () => {
+    setShowExitConfirmModal(false);
+    if (!isAiOpponent && sessionId) {
+      connectdropSocket.sendRoomEvent(sessionId, {
+        type: 'MATCH_FORFEITED',
+        eventType: 'MATCH_FORFEITED',
+        forfeiter: playerName,
+        message: `${playerName} forfeited and returned to lobby.`,
+      });
+    }
+    connectdropSocket.disconnect();
+    setView('LOBBY');
+    setIsGameOver(false);
+    setGrid(createEmptyGrid());
+    setCurrentTurn('RED');
+    setWinner(null);
+    setWinningCells(null);
+    setLastDroppedCell(null);
+    setRoomCode('');
+    setSessionId('');
+    setIsHost(false);
+    setMyColor('RED');
+  };
 
   // Guest toggles ready status
   const handleToggleReady = () => {
@@ -1214,10 +1272,7 @@ const ConnectDropLobby = () => {
           <div className="arena-controls">
             <button
               className="btn-cyber btn-outline"
-              onClick={() => {
-                connectdropSocket.disconnect();
-                setView('LOBBY');
-              }}
+              onClick={handleExitMatchClick}
             >
               ⬅️ Abandon Arena
             </button>
@@ -1228,6 +1283,37 @@ const ConnectDropLobby = () => {
             >
               🔄 Reset Board
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* Exit Match Confirmation Modal */}
+      {showExitConfirmModal && (
+        <div className="modal-backdrop">
+          <div className="gameover-modal" style={{ maxWidth: '420px', textAlign: 'center' }}>
+            <h3 style={{ color: '#ff0055', fontSize: '1.4rem', margin: '0 0 0.8rem 0' }}>
+              ⚠️ Exit Active Match?
+            </h3>
+            <p style={{ color: '#94a3b8', fontSize: '0.95rem', lineHeight: '1.5', margin: '0 0 1.5rem 0' }}>
+              Are you sure you want to forfeit and leave? Leaving while a match is running will end the duel for both players.
+            </p>
+            <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'center' }}>
+              <button
+                type="button"
+                className="btn-cyber btn-outline"
+                onClick={() => setShowExitConfirmModal(false)}
+              >
+                Keep Playing
+              </button>
+              <button
+                type="button"
+                className="btn-cyber btn-primary"
+                style={{ background: 'linear-gradient(90deg, #ff0055, #e94560)' }}
+                onClick={confirmExitToLobby}
+              >
+                Yes, Forfeit & Exit
+              </button>
+            </div>
           </div>
         </div>
       )}
