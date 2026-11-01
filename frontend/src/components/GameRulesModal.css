@@ -32,6 +32,8 @@
   flex-direction: column;
   overflow: hidden;
   animation: rulesSlideUp 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  pointer-events: auto;
+  touch-action: manipulation;
 }
 
 @keyframes rulesSlideUp {
@@ -91,6 +93,8 @@
   cursor: pointer;
   transition: all 0.2s ease;
   flex-shrink: 0;
+  pointer-events: auto;
+  touch-action: manipulation;
 }
 
 .rules-close-btn:hover {
@@ -175,6 +179,8 @@
   box-shadow: 0 0 16px rgba(0, 242, 254, 0.35);
   transition: all 0.2s ease;
   width: 100%;
+  pointer-events: auto;
+  touch-action: manipulation;
 }
 
 .rules-got-it-btn:hover {
