@@ -7,15 +7,23 @@ const AuthContext = createContext(null);
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(() => {
     try {
-      const saved = localStorage.getItem('owg_user');
-      if (saved) {
-        const parsed = JSON.parse(saved);
+      const sessionSaved = sessionStorage.getItem('owg_user');
+      if (sessionSaved) {
+        const parsed = JSON.parse(sessionSaved);
         if (parsed && parsed.userId) {
           return parsed;
         }
       }
+      const saved = localStorage.getItem('owg_user');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed && parsed.userId) {
+          sessionStorage.setItem('owg_user', saved);
+          return parsed;
+        }
+      }
     } catch (e) {
-      console.error('Failed to parse user from localStorage', e);
+      console.error('Failed to parse user from storage', e);
     }
     return null;
   });
@@ -28,6 +36,7 @@ export const AuthProvider = ({ children }) => {
       authApi.createGuestSession().then((guestProfile) => {
         if (isMounted) {
           setUser(guestProfile);
+          sessionStorage.setItem('owg_user', JSON.stringify(guestProfile));
           localStorage.setItem('owg_user', JSON.stringify(guestProfile));
         }
       });
@@ -40,15 +49,18 @@ export const AuthProvider = ({ children }) => {
   const login = useCallback(async (username, password) => {
     const profile = await authApi.login(username, password);
     setUser(profile);
+    sessionStorage.setItem('owg_user', JSON.stringify(profile));
     localStorage.setItem('owg_user', JSON.stringify(profile));
     setIsLoginModalOpen(false);
     return profile;
   }, []);
 
   const logout = useCallback(async () => {
+    sessionStorage.removeItem('owg_user');
     localStorage.removeItem('owg_user');
     const guestProfile = await authApi.createGuestSession();
     setUser(guestProfile);
+    sessionStorage.setItem('owg_user', JSON.stringify(guestProfile));
     localStorage.setItem('owg_user', JSON.stringify(guestProfile));
     return guestProfile;
   }, []);
@@ -57,6 +69,7 @@ export const AuthProvider = ({ children }) => {
     if (!name || !name.trim()) return;
     setUser((prev) => {
       const updated = { ...(prev || {}), displayName: name.trim() };
+      sessionStorage.setItem('owg_user', JSON.stringify(updated));
       localStorage.setItem('owg_user', JSON.stringify(updated));
       return updated;
     });
@@ -70,6 +83,7 @@ export const AuthProvider = ({ children }) => {
       isGuest: false,
     };
     setUser(profile);
+    sessionStorage.setItem('owg_user', JSON.stringify(profile));
     localStorage.setItem('owg_user', JSON.stringify(profile));
     setIsLoginModalOpen(false);
     return profile;
