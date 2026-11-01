@@ -82,10 +82,35 @@ const createInitialGrid = () => {
   }));
 };
 
+const playTone = (freq, duration, type = 'sine', volume = 0.12) => {
+  try {
+    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+    if (!AudioCtx) return;
+    const ctx = new AudioCtx();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = type;
+    osc.frequency.setValueAtTime(freq, ctx.currentTime);
+    gain.gain.setValueAtTime(volume, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + duration);
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start();
+    osc.stop(ctx.currentTime + duration);
+  } catch {
+    // Autoplay policy fallback
+  }
+};
+
 export const WordGridLobby = () => {
   const { user } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
   const hasAutoJoinedRef = useRef(false);
+
+  // Sound & Voice Chat Controls
+  const [soundEnabled, setSoundEnabled] = useState(true);
+  const [voiceJoined, setVoiceJoined] = useState(false);
+  const [micMuted, setMicMuted] = useState(false);
 
   // Navigation & View: 'LOBBY' | 'ARENA'
   const [view, setView] = useState('LOBBY');
@@ -1611,6 +1636,29 @@ export const WordGridLobby = () => {
               </div>
 
               <div className="wgb-turn-actions">
+                <button
+                  type="button"
+                  className={`hud-tool-btn sound-toggle-btn ${!soundEnabled ? 'sound-off' : ''}`}
+                  onClick={() => setSoundEnabled((prev) => !prev)}
+                  title="Toggle Game Sound Effects"
+                >
+                  {soundEnabled ? '🔊 Sound: ON' : '🔈 Sound: OFF'}
+                </button>
+
+                {!isSoloAI && sessionId && (
+                  <button
+                    type="button"
+                    className={`hud-tool-btn voice-btn ${voiceJoined ? 'voice-on' : ''}`}
+                    onClick={() => {
+                      if (!voiceJoined) setVoiceJoined(true);
+                      else setMicMuted((m) => !m);
+                    }}
+                    title="In-Room Voice Chat"
+                  >
+                    {!voiceJoined ? '🎙️ Voice: Join' : micMuted ? '🔇 Muted' : '🎙️ Mic ON'}
+                  </button>
+                )}
+
                 <button
                   className="wgb-fast-proceed-btn"
                   onClick={handleFastProceed}

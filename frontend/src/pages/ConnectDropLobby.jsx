@@ -101,6 +101,8 @@ const ConnectDropLobby = () => {
   const [copySuccess, setCopySuccess] = useState(false);
   const [loading, setLoading] = useState(false);
   const [soundEnabled, setSoundEnabled] = useState(true);
+  const [voiceJoined, setVoiceJoined] = useState(false);
+  const [micMuted, setMicMuted] = useState(false);
   const [showExitConfirmModal, setShowExitConfirmModal] = useState(false);
   const [showRulesModal, setShowRulesModal] = useState(false);
 
@@ -1147,12 +1149,27 @@ const ConnectDropLobby = () => {
               <div className="match-vs-banner">
                 <span className="vs-text">VS</span>
                 <button
-                  className="sound-toggle-btn"
+                  type="button"
+                  className={`sound-toggle-btn ${!soundEnabled ? 'sound-off' : ''}`}
                   onClick={() => setSoundEnabled(!soundEnabled)}
-                  title={soundEnabled ? 'Mute SFX' : 'Enable SFX'}
+                  title="Toggle Game Sound Effects"
                 >
-                  {soundEnabled ? '🔊' : '🔇'}
+                  {soundEnabled ? '🔊 Sound: ON' : '🔈 Sound: OFF'}
                 </button>
+
+                {!isAiOpponent && sessionId && (
+                  <button
+                    type="button"
+                    className={`hud-tool-btn voice-btn ${voiceJoined ? 'voice-on' : ''}`}
+                    onClick={() => {
+                      if (!voiceJoined) setVoiceJoined(true);
+                      else setMicMuted((m) => !m);
+                    }}
+                    title="In-Room Voice Chat"
+                  >
+                    {!voiceJoined ? '🎙️ Voice: Join' : micMuted ? '🔇 Muted' : '🎙️ Mic ON'}
+                  </button>
+                )}
               </div>
 
               {/* Turn Countdown Timer */}

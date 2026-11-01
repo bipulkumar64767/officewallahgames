@@ -116,6 +116,84 @@ const RULES_DATA = {
       },
     ],
   },
+  snake: {
+    title: 'Snake Rush',
+    badge: 'Retro Arcade Solo',
+    rules: [
+      {
+        icon: '🐍',
+        heading: 'Navigate the Grid',
+        desc: 'Guide your cyber snake across the arena using Arrow keys or WASD on desktop, or the on-screen D-pad on mobile.',
+      },
+      {
+        icon: '⚡',
+        heading: 'Eat Neon Energy Orbs',
+        desc: 'Collect neon food (+10 pts) to grow longer. Golden power orbs spawn intermittently for bonus score (+50 pts).',
+      },
+      {
+        icon: '💥',
+        heading: 'Avoid Collisions',
+        desc: 'Crashing into arena walls or your own tail will cause an instant game over. Plan your turns carefully!',
+      },
+      {
+        icon: '🏆',
+        heading: 'High Score Mastery',
+        desc: 'Speed increases as your snake grows. Outmaneuver your past records to set new personal bests saved in your browser.',
+      },
+    ],
+  },
+  grid2048: {
+    title: '2048 Cyber Grid',
+    badge: 'Number Puzzle Solo',
+    rules: [
+      {
+        icon: '🔢',
+        heading: 'Slide & Merge',
+        desc: 'Use Arrow keys, WASD, or swipe gestures to slide tiles across the 4x4 grid. When two tiles with the same number collide, they merge into one!',
+      },
+      {
+        icon: '✨',
+        heading: 'Tile Evolution',
+        desc: '2 + 2 = 4, 4 + 4 = 8 ... combine tiles all the way up to 2048 and beyond for astronomical high scores.',
+      },
+      {
+        icon: '🧱',
+        heading: 'Keep Space Open',
+        desc: 'A new 2 or 4 tile spawns after every valid slide. If the board completely fills and no moves remain, the run ends.',
+      },
+      {
+        icon: '👑',
+        heading: 'Victory Condition',
+        desc: 'Create the legendary 2048 tile to win! You can continue playing indefinitely to achieve the highest possible score.',
+      },
+    ],
+  },
+  speedchess: {
+    title: 'Speed Chess Arena',
+    badge: 'Real-Time 1v1 Strategy',
+    rules: [
+      {
+        icon: '♟️',
+        heading: 'Standard Chess Rules',
+        desc: 'Full FIDE chess rules apply: pawns, knights, bishops, rooks, queens, and kings move according to standard regulations.',
+      },
+      {
+        icon: '⏱️',
+        heading: '5-Minute Blitz Clocks',
+        desc: 'Each player has a 5-minute countdown clock. Make your moves before your clock reaches zero or your opponent claims victory on time.',
+      },
+      {
+        icon: '⚔️',
+        heading: 'Check & Checkmate',
+        desc: 'Trap your opponent’s King with an inescapable attack to win by Checkmate.',
+      },
+      {
+        icon: '🎙️',
+        heading: 'Voice & Pairing Options',
+        desc: 'Play vs Smart Stockfish-style AI or challenge coworkers via Private Room codes with real-time in-room voice chat.',
+      },
+    ],
+  },
 };
 
 export default function GameRulesModal({ isOpen, onClose, gameKey = 'tictactoe' }) {

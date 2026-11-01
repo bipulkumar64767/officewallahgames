@@ -1,0 +1,425 @@
+/* SnakeGame.css - Cyberpunk Neon Styling */
+
+.snake-page-container {
+  min-height: calc(100vh - 72px);
+  background: radial-gradient(circle at 50% 20%, #151c38 0%, #080c18 80%, #03060d 100%);
+  color: #ffffff;
+  padding: 1.25rem 1.5rem 3rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  position: relative;
+  overflow-x: hidden;
+}
+
+/* Top Bar: Breadcrumb + Rules */
+.snake-top-bar {
+  width: 100%;
+  max-width: 520px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1.25rem;
+}
+
+.snake-breadcrumb {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.88rem;
+  font-weight: 500;
+  color: #94a3b8;
+}
+
+.snake-breadcrumb a {
+  color: #00f2fe;
+  text-decoration: none;
+  transition: color 0.2s ease;
+}
+
+.snake-breadcrumb a:hover {
+  color: #ffffff;
+  text-shadow: 0 0 8px rgba(0, 242, 254, 0.6);
+}
+
+.snake-breadcrumb .breadcrumb-current {
+  color: #f1f5f9;
+  font-weight: 600;
+}
+
+/* HUD Banner: Score, High Score, Sound, Pause */
+.snake-hud-banner {
+  width: 100%;
+  max-width: 520px;
+  background: rgba(15, 23, 42, 0.75);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(0, 242, 254, 0.3);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4), 0 0 16px rgba(0, 242, 254, 0.12);
+  border-radius: 16px;
+  padding: 0.85rem 1.25rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 1.25rem;
+  gap: 1rem;
+}
+
+.hud-player-info {
+  display: flex;
+  align-items: center;
+  gap: 1.25rem;
+}
+
+.snake-avatar-icon {
+  font-size: 1.8rem;
+  filter: drop-shadow(0 0 8px rgba(0, 255, 170, 0.6));
+}
+
+.score-stat-group {
+  display: flex;
+  flex-direction: column;
+}
+
+.stat-label {
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 1.5px;
+  color: #94a3b8;
+  text-transform: uppercase;
+}
+
+.stat-value {
+  font-size: 1.4rem;
+  font-weight: 800;
+  line-height: 1.1;
+  font-family: 'Courier New', Courier, monospace;
+}
+
+.neon-cyan {
+  color: #00f2fe;
+  text-shadow: 0 0 10px rgba(0, 242, 254, 0.6);
+}
+
+.neon-gold {
+  color: #ffd700;
+  text-shadow: 0 0 10px rgba(255, 215, 0, 0.6);
+}
+
+.hud-banner-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.hud-tool-btn {
+  background: rgba(15, 23, 42, 0.8);
+  border: 1px solid rgba(0, 242, 254, 0.35);
+  color: #00f2fe;
+  font-size: 0.82rem;
+  font-weight: 700;
+  padding: 0.5rem 0.85rem;
+  border-radius: 10px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+}
+
+.hud-tool-btn:hover {
+  background: rgba(0, 242, 254, 0.15);
+  border-color: #00f2fe;
+  box-shadow: 0 0 12px rgba(0, 242, 254, 0.35);
+  transform: translateY(-1px);
+}
+
+.sound-toggle-btn.sound-off {
+  border-color: rgba(148, 163, 184, 0.3);
+  color: #94a3b8;
+}
+
+.pause-btn {
+  border-color: rgba(255, 215, 0, 0.4);
+  color: #ffd700;
+}
+
+/* Arena & Canvas Frame */
+.snake-arena-wrapper {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1.25rem;
+  width: 100%;
+  max-width: 520px;
+}
+
+.canvas-frame {
+  position: relative;
+  width: 100%;
+  max-width: 440px;
+  aspect-ratio: 1 / 1;
+  border-radius: 18px;
+  overflow: hidden;
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.6), 0 0 24px rgba(0, 242, 254, 0.2);
+  border: 2px solid rgba(0, 242, 254, 0.4);
+  background: #080c18;
+}
+
+.snake-canvas {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+/* Overlays (Start, Pause, Game Over) */
+.snake-overlay-card {
+  position: absolute;
+  inset: 0;
+  background: rgba(8, 12, 24, 0.88);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 1.75rem;
+  text-align: center;
+  z-index: 10;
+  animation: fadeIn 0.25s ease-out;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.snake-overlay-badge {
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 2px;
+  color: #00ffaa;
+  background: rgba(0, 255, 170, 0.12);
+  border: 1px solid rgba(0, 255, 170, 0.3);
+  padding: 0.25rem 0.75rem;
+  border-radius: 20px;
+  margin-bottom: 0.75rem;
+}
+
+.snake-overlay-title {
+  font-size: 1.9rem;
+  font-weight: 900;
+  color: #ffffff;
+  text-shadow: 0 0 18px rgba(0, 242, 254, 0.8);
+  margin: 0 0 0.5rem 0;
+  letter-spacing: 1px;
+}
+
+.defeat-title {
+  color: #ff007f;
+  text-shadow: 0 0 18px rgba(255, 0, 127, 0.8);
+}
+
+.game-over-icon {
+  font-size: 2.4rem;
+  margin-bottom: 0.25rem;
+  filter: drop-shadow(0 0 12px rgba(255, 0, 127, 0.8));
+}
+
+.new-record-pill {
+  background: linear-gradient(90deg, rgba(255, 215, 0, 0.25), rgba(255, 170, 0, 0.25));
+  border: 1px solid #ffd700;
+  color: #ffd700;
+  font-size: 0.82rem;
+  font-weight: 800;
+  padding: 0.35rem 0.9rem;
+  border-radius: 20px;
+  margin-bottom: 0.85rem;
+  animation: pulseGold 1.5s infinite;
+}
+
+@keyframes pulseGold {
+  0%, 100% {
+    box-shadow: 0 0 10px rgba(255, 215, 0, 0.3);
+  }
+  50% {
+    box-shadow: 0 0 20px rgba(255, 215, 0, 0.7);
+  }
+}
+
+.snake-overlay-desc {
+  font-size: 0.92rem;
+  color: #94a3b8;
+  max-width: 300px;
+  margin-bottom: 1.5rem;
+  line-height: 1.45;
+}
+
+.btn-cyber-primary {
+  background: linear-gradient(135deg, #00f2fe 0%, #4facfe 100%);
+  color: #03060d;
+  font-size: 1rem;
+  font-weight: 800;
+  padding: 0.85rem 2rem;
+  border: none;
+  border-radius: 12px;
+  cursor: pointer;
+  box-shadow: 0 0 20px rgba(0, 242, 254, 0.5);
+  transition: all 0.2s ease;
+  letter-spacing: 0.5px;
+}
+
+.btn-cyber-primary:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 0 28px rgba(0, 242, 254, 0.8);
+}
+
+.btn-cyber-outline {
+  background: transparent;
+  color: #94a3b8;
+  font-size: 0.92rem;
+  font-weight: 700;
+  padding: 0.8rem 1.6rem;
+  border: 1px solid rgba(148, 163, 184, 0.4);
+  border-radius: 12px;
+  text-decoration: none;
+  transition: all 0.2s ease;
+}
+
+.btn-cyber-outline:hover {
+  color: #ffffff;
+  border-color: #00f2fe;
+  background: rgba(0, 242, 254, 0.1);
+  transform: translateY(-1px);
+}
+
+.overlay-controls-hint {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin-top: 1.25rem;
+  font-size: 0.78rem;
+  color: #64748b;
+  font-weight: 600;
+}
+
+.game-over-stats {
+  display: flex;
+  gap: 1.5rem;
+  margin-bottom: 1.5rem;
+}
+
+.go-stat-box {
+  background: rgba(15, 23, 42, 0.8);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  padding: 0.65rem 1.25rem;
+  display: flex;
+  flex-direction: column;
+}
+
+.go-stat-label {
+  font-size: 0.7rem;
+  color: #94a3b8;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.go-stat-val {
+  font-size: 1.6rem;
+  font-weight: 900;
+  font-family: 'Courier New', Courier, monospace;
+}
+
+.game-over-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  width: 100%;
+  max-width: 260px;
+}
+
+/* Mobile D-Pad Controls */
+.mobile-dpad-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.35rem;
+  margin-top: 0.75rem;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.dpad-row {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.dpad-btn {
+  width: 58px;
+  height: 52px;
+  background: rgba(15, 23, 42, 0.85);
+  border: 1.5px solid rgba(0, 242, 254, 0.4);
+  color: #00f2fe;
+  font-size: 1.3rem;
+  font-weight: 900;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4), 0 0 10px rgba(0, 242, 254, 0.15);
+  transition: all 0.15s ease;
+  touch-action: manipulation;
+}
+
+.dpad-btn:active {
+  background: rgba(0, 242, 254, 0.35);
+  border-color: #00ffaa;
+  color: #ffffff;
+  transform: scale(0.92);
+  box-shadow: 0 0 16px rgba(0, 255, 170, 0.6);
+}
+
+.dpad-hub {
+  width: 58px;
+  height: 52px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.4rem;
+  opacity: 0.65;
+}
+
+/* Responsive adjustments */
+@media (max-width: 480px) {
+  .snake-page-container {
+    padding: 0.75rem 0.75rem 2rem;
+  }
+
+  .canvas-frame {
+    max-width: 94vw;
+  }
+
+  .snake-hud-banner {
+    padding: 0.65rem 0.9rem;
+  }
+
+  .stat-value {
+    font-size: 1.2rem;
+  }
+
+  .dpad-btn {
+    width: 64px;
+    height: 56px;
+    font-size: 1.4rem;
+  }
+}

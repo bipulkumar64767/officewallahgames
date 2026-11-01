@@ -1071,7 +1071,43 @@
 .wgb-turn-actions {
   display: flex;
   align-items: center;
-  gap: 0.75rem;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+}
+
+.wgb-turn-actions .hud-tool-btn {
+  background: rgba(15, 23, 42, 0.85);
+  border: 1px solid rgba(0, 242, 254, 0.35);
+  color: #00f2fe;
+  font-size: 0.8rem;
+  font-weight: 700;
+  padding: 0.45rem 0.75rem;
+  border-radius: 8px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+}
+
+.wgb-turn-actions .hud-tool-btn:hover {
+  background: rgba(0, 242, 254, 0.2);
+  border-color: #00f2fe;
+  box-shadow: 0 0 10px rgba(0, 242, 254, 0.35);
+  transform: translateY(-1px);
+}
+
+.wgb-turn-actions .sound-toggle-btn.sound-off {
+  background: rgba(148, 163, 184, 0.1);
+  border-color: rgba(148, 163, 184, 0.3);
+  color: #94a3b8;
+}
+
+.wgb-turn-actions .voice-btn.voice-on {
+  border-color: #00ffaa;
+  color: #00ffaa;
+  background: rgba(0, 255, 170, 0.15);
 }
 
 .wgb-fast-proceed-btn {

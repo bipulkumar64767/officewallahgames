@@ -897,17 +897,52 @@
 }
 
 .sound-toggle-btn {
-  background: transparent;
-  border: none;
-  font-size: 1.1rem;
+  background: rgba(0, 242, 254, 0.12);
+  border: 1px solid rgba(0, 242, 254, 0.4);
+  color: #00f2fe;
+  font-size: 0.8rem;
+  font-weight: 700;
+  border-radius: 8px;
   cursor: pointer;
-  padding: 0.2rem;
-  opacity: 0.75;
-  transition: opacity 0.2s;
+  padding: 0.35rem 0.65rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  transition: all 0.2s ease;
+  white-space: nowrap;
 }
 
 .sound-toggle-btn:hover {
-  opacity: 1;
+  background: rgba(0, 242, 254, 0.25);
+  box-shadow: 0 0 10px rgba(0, 242, 254, 0.35);
+  transform: translateY(-1px);
+}
+
+.sound-toggle-btn.sound-off {
+  background: rgba(148, 163, 184, 0.1);
+  border-color: rgba(148, 163, 184, 0.3);
+  color: #94a3b8;
+}
+
+.hud-tool-btn.voice-btn {
+  background: rgba(15, 23, 42, 0.8);
+  border: 1px solid rgba(0, 242, 254, 0.35);
+  color: #00f2fe;
+  font-size: 0.78rem;
+  font-weight: 700;
+  padding: 0.35rem 0.65rem;
+  border-radius: 8px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  transition: all 0.2s ease;
+}
+
+.hud-tool-btn.voice-btn.voice-on {
+  border-color: #00ffaa;
+  color: #00ffaa;
+  background: rgba(0, 255, 170, 0.15);
 }
 
 /* Turn Timer 20s countdown */
