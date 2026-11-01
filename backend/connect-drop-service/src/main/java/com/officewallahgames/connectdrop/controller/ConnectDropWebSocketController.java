@@ -9,7 +9,10 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.messaging.handler.annotation.DestinationVariable;
 import org.springframework.messaging.handler.annotation.MessageMapping;
 import org.springframework.messaging.handler.annotation.Payload;
+import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Controller;
+
+import java.util.Map;
 
 @Slf4j
 @Controller
@@ -17,6 +20,15 @@ import org.springframework.stereotype.Controller;
 public class ConnectDropWebSocketController {
 
     private final ConnectDropService connectDropService;
+    private final SimpMessagingTemplate messagingTemplate;
+
+    @MessageMapping("/connectdrop/{sessionId}/room-event")
+    public void handleRoomEvent(
+            @DestinationVariable String sessionId,
+            @Payload Map<String, Object> payload) {
+        log.info("Relaying ConnectDrop room event for session {}: type={}", sessionId, payload.get("type"));
+        messagingTemplate.convertAndSend("/topic/connectdrop/" + sessionId, payload);
+    }
 
     @MessageMapping("/connectdrop/{sessionId}/drop")
     public void handleDrop(

@@ -9,7 +9,10 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.messaging.handler.annotation.DestinationVariable;
 import org.springframework.messaging.handler.annotation.MessageMapping;
 import org.springframework.messaging.handler.annotation.Payload;
+import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Controller;
+
+import java.util.Map;
 
 @Slf4j
 @Controller
@@ -17,6 +20,15 @@ import org.springframework.stereotype.Controller;
 public class WordGridWebSocketController {
 
     private final WordGridService wordGridService;
+    private final SimpMessagingTemplate messagingTemplate;
+
+    @MessageMapping("/wordgrid/{sessionId}/room-event")
+    public void handleRoomEvent(
+            @DestinationVariable String sessionId,
+            @Payload Map<String, Object> payload) {
+        log.info("Relaying WordGrid room event for session {}: type={}", sessionId, payload.get("type"));
+        messagingTemplate.convertAndSend("/topic/wordgrid/" + sessionId, payload);
+    }
 
     @MessageMapping("/wordgrid/{sessionId}/place-letter")
     public void handlePlaceLetter(

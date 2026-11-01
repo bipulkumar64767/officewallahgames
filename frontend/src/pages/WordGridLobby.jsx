@@ -453,21 +453,46 @@ export const WordGridLobby = () => {
 
       switch (eventType) {
         case 'PLAYER_JOINED': {
-          setSlotStates((prev) => ({
-            ...prev,
-            [event.slot]: 'ACTIVE',
-          }));
-          if (event.playerName) {
-            setPlayerNames((prev) => ({
+          const rawColor = event.color || (event.session && event.session.color);
+          const mappedSlot = event.slot || (rawColor === 'RED' ? 'P1' : rawColor === 'GREEN' ? 'P2' : rawColor === 'YELLOW' ? 'P3' : rawColor === 'BLUE' ? 'P4' : null);
+          const pName = event.playerName || (event.session?.playerNames && rawColor ? event.session.playerNames[rawColor] : null) || mappedSlot;
+
+          if (mappedSlot) {
+            setSlotStates((prev) => ({
               ...prev,
-              [event.slot]: event.playerName,
+              [mappedSlot]: 'ACTIVE',
+            }));
+            if (pName) {
+              setPlayerNames((prev) => ({
+                ...prev,
+                [mappedSlot]: pName,
+              }));
+            }
+            setReadyStates((prev) => ({
+              ...prev,
+              [mappedSlot]: false,
             }));
           }
-          setReadyStates((prev) => ({
-            ...prev,
-            [event.slot]: false,
-          }));
-          showToast(`🎮 ${event.playerName || event.slot} joined the room!`, 'success');
+
+          if (event.session?.slotStates) {
+            const sStates = {};
+            Object.entries(event.session.slotStates).forEach(([k, v]) => {
+              const sKey = k === 'RED' ? 'P1' : k === 'GREEN' ? 'P2' : k === 'YELLOW' ? 'P3' : k === 'BLUE' ? 'P4' : k;
+              sStates[sKey] = v;
+            });
+            setSlotStates((prev) => ({ ...prev, ...sStates }));
+          }
+
+          if (event.session?.playerNames) {
+            const pNames = {};
+            Object.entries(event.session.playerNames).forEach(([k, v]) => {
+              const sKey = k === 'RED' ? 'P1' : k === 'GREEN' ? 'P2' : k === 'YELLOW' ? 'P3' : k === 'BLUE' ? 'P4' : k;
+              pNames[sKey] = v;
+            });
+            setPlayerNames((prev) => ({ ...prev, ...pNames }));
+          }
+
+          showToast(`🎮 ${pName || 'Challenger'} joined the room!`, 'success');
 
           // If Host, broadcast room synchronization so guest receives current slotStates, playerNames & readyStates
           if (stateRef.current.isHost && stateRef.current.sessionId) {
@@ -475,16 +500,16 @@ export const WordGridLobby = () => {
               type: 'ROOM_SYNC',
               slotStates: {
                 ...stateRef.current.slotStates,
-                [event.slot]: 'ACTIVE',
+                ...(mappedSlot ? { [mappedSlot]: 'ACTIVE' } : {}),
               },
               playerNames: {
                 ...stateRef.current.playerNames,
-                [event.slot]: event.playerName || stateRef.current.playerNames[event.slot],
+                ...(mappedSlot && pName ? { [mappedSlot]: pName } : {}),
               },
               readyStates: {
                 ...stateRef.current.readyStates,
                 P1: true,
-                [event.slot]: false,
+                ...(mappedSlot ? { [mappedSlot]: false } : {}),
               },
             });
           }

@@ -162,10 +162,19 @@ export class WordGridSocketManager {
     if (!this.client || !this.isConnected) {
       return false;
     }
-    this.client.publish({
-      destination: `/topic/wordgrid/${sessionId}`,
-      body: JSON.stringify(event),
-    });
+    const payload = JSON.stringify(event);
+    try {
+      this.client.publish({
+        destination: `/app/wordgrid/${sessionId}/room-event`,
+        body: payload,
+      });
+    } catch (_) {}
+    try {
+      this.client.publish({
+        destination: `/topic/wordgrid/${sessionId}`,
+        body: payload,
+      });
+    } catch (_) {}
     return true;
   }
 

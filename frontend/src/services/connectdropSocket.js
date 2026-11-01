@@ -87,10 +87,19 @@ export class ConnectDropSocketManager {
     if (!this.client || !this.isConnected) {
       return false;
     }
-    this.client.publish({
-      destination: `/topic/connectdrop/${sessionId}`,
-      body: JSON.stringify(event),
-    });
+    const payload = JSON.stringify(event);
+    try {
+      this.client.publish({
+        destination: `/app/connectdrop/${sessionId}/room-event`,
+        body: payload,
+      });
+    } catch (_) {}
+    try {
+      this.client.publish({
+        destination: `/topic/connectdrop/${sessionId}`,
+        body: payload,
+      });
+    } catch (_) {}
     return true;
   }
 
