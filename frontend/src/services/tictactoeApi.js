@@ -10,6 +10,25 @@ const generateMockRoomCode = () => {
   return code;
 };
 
+export const extractCleanRoomCode = (input, defaultPrefix = 'TTT-') => {
+  if (!input) return '';
+  let str = String(input).trim();
+  const roomMatch = str.match(/[?&]room=([A-Za-z0-9-]+)/i);
+  if (roomMatch && roomMatch[1]) {
+    str = roomMatch[1];
+  } else {
+    const lastPart = str.split('/').pop().split('?').pop();
+    if (lastPart && (lastPart.includes('-') || lastPart.length === 4)) {
+      str = lastPart;
+    }
+  }
+  str = str.toUpperCase().replace(/[^A-Z0-9-]/g, '');
+  if (defaultPrefix && !str.startsWith(defaultPrefix) && !str.includes('-')) {
+    str = `${defaultPrefix}${str}`;
+  }
+  return str;
+};
+
 export const tictactoeApi = {
   createRoom: async (playerId, playerName) => {
     try {
@@ -39,7 +58,7 @@ export const tictactoeApi = {
   },
 
   joinRoom: async (roomCode, playerId, playerName) => {
-    const cleanCode = (roomCode || 'TTT-DEMO').trim().toUpperCase();
+    const cleanCode = extractCleanRoomCode(roomCode, 'TTT-') || 'TTT-DEMO';
     try {
       const response = await fetch(`${TTT_API_BASE_URL}/rooms/join`, {
         method: 'POST',

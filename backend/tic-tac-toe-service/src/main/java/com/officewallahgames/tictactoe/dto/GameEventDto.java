@@ -16,6 +16,7 @@ public class GameEventDto {
     private String eventType;
     private String type;
     private String playerId;
+    private String playerName;
     private String symbol;
     private String sessionId;
     private GameSession session;

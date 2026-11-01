@@ -15,6 +15,7 @@ import {
   queueQuickMatch,
 } from '../services/connectdropApi';
 import { connectdropSocket } from '../services/connectdropSocket';
+import GameRulesModal from '../components/GameRulesModal';
 import './ConnectDropLobby.css';
 
 const TURN_TIME_LIMIT = 20;
@@ -101,6 +102,7 @@ const ConnectDropLobby = () => {
   const [loading, setLoading] = useState(false);
   const [soundEnabled, setSoundEnabled] = useState(true);
   const [showExitConfirmModal, setShowExitConfirmModal] = useState(false);
+  const [showRulesModal, setShowRulesModal] = useState(false);
 
   // Synchronized refs for timers and WS callbacks
   const gridRef = useRef(grid);
@@ -773,14 +775,31 @@ const ConnectDropLobby = () => {
         </div>
       )}
 
-      {/* Breadcrumb Navigation */}
-      <nav className="connectdrop-breadcrumb">
-        <Link to="/">Home</Link>
-        <span className="breadcrumb-separator">/</span>
-        <Link to="/games">Games</Link>
-        <span className="breadcrumb-separator">/</span>
-        <span className="breadcrumb-active">Connect Drop</span>
-      </nav>
+      {/* Top Bar with Breadcrumb and Rules Info */}
+      <div className="connectdrop-top-bar">
+        <nav className="connectdrop-breadcrumb">
+          <Link to="/">Home</Link>
+          <span className="breadcrumb-separator">/</span>
+          <Link to="/games">Games</Link>
+          <span className="breadcrumb-separator">/</span>
+          <span className="breadcrumb-active">Connect Drop</span>
+        </nav>
+        <button
+          type="button"
+          className="btn-rules-info"
+          onClick={() => setShowRulesModal(true)}
+          title="Game Rules & Regulations"
+        >
+          <span>ℹ️ Rules</span>
+        </button>
+      </div>
+
+      {/* Game Rules Modal */}
+      <GameRulesModal
+        isOpen={showRulesModal}
+        onClose={() => setShowRulesModal(false)}
+        gameKey="connectdrop"
+      />
 
       {/* ========================================================================= */}
       {/* VIEW: LOBBY (Exactly 2 Cards: Quick Match & Private Room)                 */}

@@ -7,8 +7,10 @@ import {
   tictactoeApi,
   checkWinner,
   computeBestAIMove,
+  extractCleanRoomCode,
 } from '../services/tictactoeApi';
 import { tictactoeSocket } from '../services/tictactoeSocket';
+import GameRulesModal from '../components/GameRulesModal';
 import './TicTacToeLobby.css';
 
 // Sound Synthesizer via Web Audio API
@@ -223,6 +225,7 @@ const TicTacToeLobby = () => {
 
   // Hover ghost preview
   const [hoveredCell, setHoveredCell] = useState(null);
+  const [showRulesModal, setShowRulesModal] = useState(false);
 
   const playerIdentity = getPlayerIdentity(user);
   const playerId = playerIdentity.playerId;
@@ -976,7 +979,8 @@ const TicTacToeLobby = () => {
   // Join Private Room (Guest)
   const joinPrivateRoom = useCallback(
     async (codeToJoin) => {
-      const code = (codeToJoin || joinCodeInput).trim().toUpperCase();
+      const raw = (codeToJoin || joinCodeInput || '').trim();
+      const code = extractCleanRoomCode(raw, 'TTT-');
       if (!code) {
         setStatusMessage('Please enter a valid room code.');
         return;
@@ -1035,7 +1039,8 @@ const TicTacToeLobby = () => {
 
   // Auto-join if room query parameter is present on initial mount
   useEffect(() => {
-    const roomFromUrl = (searchParams.get('room') || '').trim().toUpperCase();
+    const rawUrlCode = (searchParams.get('room') || '').trim();
+    const roomFromUrl = extractCleanRoomCode(rawUrlCode, 'TTT-');
     if (roomFromUrl && !hasAutoJoinedRef.current && view === 'LOBBY' && !sessionId) {
       hasAutoJoinedRef.current = true;
       joinPrivateRoom(roomFromUrl);
@@ -1238,14 +1243,31 @@ const TicTacToeLobby = () => {
       {/* Remote Audio Element for WebRTC */}
       <audio ref={remoteAudioRef} autoPlay playsInline style={{ display: 'none' }} />
 
-      {/* Navigation Breadcrumb */}
-      <nav className="lobby-breadcrumb" aria-label="Breadcrumb">
-        <Link to="/">Home</Link>
-        <span>/</span>
-        <Link to="/games">Games</Link>
-        <span>/</span>
-        <span className="breadcrumb-current">Tic-Tac-Toe Arena</span>
-      </nav>
+      {/* Navigation Top Bar with Breadcrumb and Rules Info */}
+      <div className="lobby-top-bar">
+        <nav className="lobby-breadcrumb" aria-label="Breadcrumb">
+          <Link to="/">Home</Link>
+          <span>/</span>
+          <Link to="/games">Games</Link>
+          <span>/</span>
+          <span className="breadcrumb-current">Tic-Tac-Toe Arena</span>
+        </nav>
+        <button
+          type="button"
+          className="btn-rules-info"
+          onClick={() => setShowRulesModal(true)}
+          title="Game Rules & Regulations"
+        >
+          <span>ℹ️ Rules</span>
+        </button>
+      </div>
+
+      {/* Game Rules & Regulations Modal */}
+      <GameRulesModal
+        isOpen={showRulesModal}
+        onClose={() => setShowRulesModal(false)}
+        gameKey="tictactoe"
+      />
 
       {/* LOBBY VIEW - Exactly 2 options */}
       {view === 'LOBBY' && (

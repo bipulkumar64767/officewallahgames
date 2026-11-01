@@ -1895,22 +1895,82 @@
   }
 
   .ludo-modal {
-    padding: 1.1rem;
-    max-width: 95vw;
+    padding: 1.1rem 0.9rem;
+    width: min(96vw, 540px);
+    max-width: 96vw;
+    max-height: 90vh;
+    overflow-y: auto;
+    border-radius: 16px;
   }
 
   .slots-preview-grid {
-    grid-template-columns: 1fr 1fr;
-    gap: 0.5rem;
+    grid-template-columns: 1fr;
+    gap: 0.6rem;
+    margin-bottom: 1.25rem;
+  }
+
+  .slot-card {
+    padding: 0.75rem 0.9rem;
+    gap: 0.75rem;
+  }
+
+  .waiting-modal-actions {
+    flex-direction: column;
+    gap: 0.6rem;
+    width: 100%;
+  }
+
+  .waiting-modal-actions button,
+  .waiting-modal-actions .btn-solo-ludo,
+  .waiting-modal-actions .btn-ready-toggle {
+    width: 100%;
+    justify-content: center;
+    padding: 0.75rem 1rem;
+    font-size: 0.88rem;
   }
 
   .room-code-box {
     padding: 0.75rem 1rem;
+    flex-direction: column;
+    gap: 0.5rem;
   }
 
   .room-code-value {
     font-size: 1.25rem;
+    letter-spacing: 2px;
   }
+}
+
+.ludo-top-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.btn-hud-sound {
+  background: rgba(0, 255, 170, 0.12) !important;
+  border-color: rgba(0, 255, 170, 0.4) !important;
+  color: #00ffaa !important;
+  padding: 0.35rem 0.75rem;
+  font-size: 0.78rem;
+  font-weight: 700;
+  border-radius: 8px;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  transition: all 0.2s ease;
+  cursor: pointer;
+}
+
+.btn-hud-sound.muted {
+  background: rgba(148, 163, 184, 0.1) !important;
+  border-color: rgba(148, 163, 184, 0.3) !important;
+  color: #94a3b8 !important;
+}
+
+.btn-hud-sound:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 0 12px rgba(0, 255, 170, 0.4);
 }
 
 @media (max-width: 400px) {

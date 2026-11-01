@@ -64,9 +64,15 @@ export class TicTacToeSocketManager {
     if (!this.client || !this.isConnected) {
       return false;
     }
+    const bodyStr = JSON.stringify(event);
+    // Send to both topic directly and app room-event handler for guaranteed delivery
     this.client.publish({
       destination: `/topic/game/${sessionId}`,
-      body: JSON.stringify(event),
+      body: bodyStr,
+    });
+    this.client.publish({
+      destination: `/app/game/${sessionId}/room-event`,
+      body: bodyStr,
     });
     return true;
   }
@@ -81,6 +87,12 @@ export class TicTacToeSocketManager {
   }
 
   sendStartMatch(sessionId) {
+    if (this.client && this.isConnected) {
+      this.client.publish({
+        destination: `/app/game/${sessionId}/start`,
+        body: JSON.stringify({ timestamp: Date.now() }),
+      });
+    }
     return this.sendRoomEvent(sessionId, {
       type: 'START_MATCH',
       timestamp: Date.now(),

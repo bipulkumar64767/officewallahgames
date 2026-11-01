@@ -7,6 +7,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.messaging.handler.annotation.DestinationVariable;
 import org.springframework.messaging.handler.annotation.MessageMapping;
 import org.springframework.messaging.handler.annotation.Payload;
+import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Controller;
 
 import java.util.Map;
@@ -17,6 +18,7 @@ import java.util.Map;
 public class TicTacToeWebSocketController {
 
     private final TicTacToeService ticTacToeService;
+    private final SimpMessagingTemplate messagingTemplate;
 
     @MessageMapping("/game/{sessionId}/move")
     public void handleMove(
@@ -25,6 +27,20 @@ public class TicTacToeWebSocketController {
         log.info("Received move for session {}: pos={}, symbol={}, player={}",
                 sessionId, move.getPosition(), move.getSymbol(), move.getPlayerId());
         ticTacToeService.processMove(sessionId, move);
+    }
+
+    @MessageMapping("/game/{sessionId}/start")
+    public void handleStart(
+            @DestinationVariable String sessionId) {
+        log.info("Received start match for session {}", sessionId);
+        ticTacToeService.startMatch(sessionId);
+    }
+
+    @MessageMapping("/game/{sessionId}/room-event")
+    public void handleRoomEvent(
+            @DestinationVariable String sessionId,
+            @Payload Map<String, Object> payload) {
+        messagingTemplate.convertAndSend("/topic/game/" + sessionId, payload);
     }
 
     @MessageMapping("/game/{sessionId}/rematch")

@@ -12,6 +12,7 @@ import {
 import { ludoSocket } from '../services/ludoSocket';
 import { ludoAudio } from '../utils/ludoAudio';
 import { useLudoVoiceChat } from '../utils/useLudoVoiceChat';
+import GameRulesModal from '../components/GameRulesModal';
 import './LudoLobby.css';
 
 // 52 Main Track Coordinates in clockwise order around the 15x15 board
@@ -210,6 +211,7 @@ export const LudoLobby = () => {
   // Match Disbanded Modal state
   const [isMatchDisbanded, setIsMatchDisbanded] = useState(false);
   const [disbandMessage, setDisbandMessage] = useState('');
+  const [showRulesModal, setShowRulesModal] = useState(false);
 
   const playerIdentity = getPlayerIdentity(user);
   const playerId = playerIdentity.playerId;
@@ -1143,7 +1145,16 @@ export const LudoLobby = () => {
 
   // Action: Join Room by Room Code
   const handleJoinByCode = async (codeToJoin) => {
-    const code = (codeToJoin !== undefined ? codeToJoin : joinCodeInput).trim().toUpperCase();
+    const raw = (codeToJoin !== undefined ? codeToJoin : joinCodeInput).trim();
+    if (!raw) {
+      showToast('⚠️ Please enter a valid room code.');
+      return;
+    }
+    let code = raw;
+    const match = code.match(/[?&]room=([A-Za-z0-9-]+)/i);
+    if (match && match[1]) code = match[1];
+    code = code.toUpperCase().replace(/[^A-Z0-9-]/g, '');
+    if (!code.startsWith('LDO-') && !code.includes('-')) code = `LDO-${code}`;
     if (!code) {
       showToast('⚠️ Please enter a valid room code.');
       return;
@@ -1546,16 +1557,33 @@ export const LudoLobby = () => {
           <span className="ludo-breadcrumb-current">Ludo Royale</span>
         </nav>
 
-        {/* Global Sound Toggle Button */}
-        <button
-          type="button"
-          className={`ludo-sound-btn ${isSoundMuted ? 'muted' : 'active'}`}
-          onClick={handleToggleSound}
-          title={isSoundMuted ? 'Enable Sound' : 'Mute Sound'}
-        >
-          <span>{isSoundMuted ? '🔈 Sound: OFF' : '🔊 Sound: ON'}</span>
-        </button>
+        {/* Global Sound & Rules Buttons */}
+        <div className="ludo-top-actions">
+          <button
+            type="button"
+            className="btn-rules-info"
+            onClick={() => setShowRulesModal(true)}
+            title="Game Rules & Regulations"
+          >
+            <span>ℹ️ Rules</span>
+          </button>
+          <button
+            type="button"
+            className={`ludo-sound-btn ${isSoundMuted ? 'muted' : 'active'}`}
+            onClick={handleToggleSound}
+            title={isSoundMuted ? 'Enable Sound' : 'Mute Sound'}
+          >
+            <span>{isSoundMuted ? '🔈 Sound: OFF' : '🔊 Sound: ON'}</span>
+          </button>
+        </div>
       </div>
+
+      {/* Game Rules Modal */}
+      <GameRulesModal
+        isOpen={showRulesModal}
+        onClose={() => setShowRulesModal(false)}
+        gameKey="ludo"
+      />
 
       {/* Main Hero Header */}
       <section className="ludo-hero">
@@ -1925,8 +1953,17 @@ export const LudoLobby = () => {
               </div>
             </div>
 
-            {/* Voice Chat Mesh Component in HUD */}
+            {/* Voice Chat & Game Sound Controls in Arena HUD */}
             <div className="arena-voice-controls">
+              <button
+                type="button"
+                className={`btn-voice-toggle btn-hud-sound ${isSoundMuted ? 'muted' : 'active'}`}
+                onClick={handleToggleSound}
+                title={isSoundMuted ? 'Enable Game Sound' : 'Mute Game Sound'}
+              >
+                <span>{isSoundMuted ? '🔈 Sound: OFF' : '🔊 Sound: ON'}</span>
+              </button>
+
               {!voiceChat.isVoiceConnected ? (
                 <button
                   type="button"

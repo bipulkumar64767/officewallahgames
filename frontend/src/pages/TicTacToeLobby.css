@@ -12,13 +12,22 @@
 }
 
 /* Breadcrumb */
+.lobby-top-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+  flex-wrap: wrap;
+}
+
 .lobby-breadcrumb {
   display: flex;
   align-items: center;
   gap: 0.5rem;
   font-size: 0.85rem;
   color: #94a3b8;
-  margin-bottom: 1.5rem;
+  margin-bottom: 0;
 }
 
 .lobby-breadcrumb a {

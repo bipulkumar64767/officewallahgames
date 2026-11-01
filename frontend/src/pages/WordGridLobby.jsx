@@ -17,6 +17,7 @@ import {
   isAdjacent,
   findWordOnGrid,
 } from '../utils/wordDictionary';
+import GameRulesModal from '../components/GameRulesModal';
 import './WordGridLobby.css';
 
 const ALL_SLOTS = ['P1', 'P2', 'P3', 'P4'];
@@ -105,6 +106,7 @@ export const WordGridLobby = () => {
   const [joinCodeInput, setJoinCodeInput] = useState('');
   const [isJoining, setIsJoining] = useState(false);
   const [showExitConfirmModal, setShowExitConfirmModal] = useState(false);
+  const [showRulesModal, setShowRulesModal] = useState(false);
 
   // Quick Match Matchmaking State
   const [isSearchingMatch, setIsSearchingMatch] = useState(false);
@@ -1262,14 +1264,30 @@ export const WordGridLobby = () => {
           </Link>
         )}
 
-        {view === 'ARENA' && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+          <button
+            type="button"
+            className="btn-rules-info"
+            onClick={() => setShowRulesModal(true)}
+            title="Game Rules & Regulations"
+          >
+            <span>ℹ️ Rules</span>
+          </button>
+
+          {view === 'ARENA' && (
             <span className="wgb-room-badge">
               ROOM: {roomCode || 'SOLO'} ({playerCount}P)
             </span>
-          </div>
-        )}
+          )}
+        </div>
       </header>
+
+      {/* Game Rules Modal */}
+      <GameRulesModal
+        isOpen={showRulesModal}
+        onClose={() => setShowRulesModal(false)}
+        gameKey="wordgrid"
+      />
 
       {/* ================= LOBBY SCREEN ================= */}
       {view === 'LOBBY' && (
